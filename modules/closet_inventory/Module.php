@@ -3,7 +3,7 @@
 namespace Modules\ClosetInventory;
 
 use APP;
-use Core\CModule;
+use Zabbix\Core\CModule;
 use CMenu;
 use CMenuItem;
 use DB;
