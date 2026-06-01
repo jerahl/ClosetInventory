@@ -3,7 +3,9 @@
 const SCHOOL_MAP = {};
 window.SeedData.schools.forEach((s) => (SCHOOL_MAP[s.id] = s));
 
-function schoolOf(id) { return SCHOOL_MAP[id]; }
+function schoolOf(id) {
+  return SCHOOL_MAP[id] || { id, name: id, color: { bg: "var(--card-2)", fg: "var(--ink-soft)" } };
+}
 
 function fmtDate(iso) {
   if (!iso) return "—";

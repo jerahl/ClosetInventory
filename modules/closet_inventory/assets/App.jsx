@@ -71,10 +71,18 @@ function App() {
     setLoading(true);
     try {
       const data = await apiGet("closet.list.data");
-      setSchools(data.schools || []);
-      // Normalize: list rows lack switches/power/maintenance/photos. Fill
-      // those with empty arrays so the existing card / table renderers
-      // (which read c.switches.length, c.power.upsList, etc.) don't NPE.
+      const newSchools = data.schools || [];
+      // Update SCHOOL_MAP SYNCHRONOUSLY before setClosets so the next render
+      // can resolve schoolOf(c.schoolId) without waiting for the schools
+      // effect to flush. Without this the table cells throw on .name access
+      // for one render tick after a list refresh.
+      window.SeedData = window.SeedData || { schools: [], closets: [] };
+      window.SeedData.schools = newSchools;
+      if (window.SCHOOL_MAP) {
+        Object.keys(window.SCHOOL_MAP).forEach((k) => delete window.SCHOOL_MAP[k]);
+        newSchools.forEach((s) => { window.SCHOOL_MAP[s.id] = s; });
+      }
+      setSchools(newSchools);
       const rows = (data.closets || []).map((c) => ({
         ...c,
         switches: c.switches || [],

@@ -3,7 +3,7 @@
 function ClosetFormModal({ closet, onClose, onSave }) {
   const editing = !!closet;
   const [f, setF] = React.useState(() => closet ? { ...closet } : {
-    schoolId: window.SeedData.schools[0].id, type: "IDF", floor: 1, building: "Main", room: "",
+    schoolId: (window.SeedData && window.SeedData.schools[0] && window.SeedData.schools[0].id) || "", type: "IDF", floor: 1, building: "Main", room: "",
   });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const valid = f.room.trim().length > 0;
