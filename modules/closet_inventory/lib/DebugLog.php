@@ -6,38 +6,17 @@ use CWebUser;
 
 /**
  * Append-only debug log for diagnosing module load / permission issues.
- * Writes to /tmp/closet_inventory_debug.log so an operator can tail it while
- * exercising the UI. Safe in production — guarded by a sentinel file so it
- * stays inert unless explicitly enabled.
+ * Writes to the PHP error log (php-fpm's error_log destination) via
+ * error_log(). Tail with:
+ *   sudo tail -f /var/log/php*-fpm.log    # or wherever your distro puts it
  *
- * Enable:  touch /tmp/closet_inventory_debug.on
- * Disable: rm /tmp/closet_inventory_debug.on
- *
- * The log file is created 0600 on first write.
+ * Always on — entries are prefixed [closet_inventory] so they're easy to grep.
  */
 final class DebugLog {
 
-    private const SENTINEL = '/tmp/closet_inventory_debug.on';
-    private const LOG_FILE = '/tmp/closet_inventory_debug.log';
-
-    public static function on(): bool {
-        return is_file(self::SENTINEL);
-    }
-
     public static function log(string $tag, array $ctx = []): void {
-        if (!self::on()) {
-            return;
-        }
-
         try {
-            $line = self::format($tag, $ctx);
-            $fh = @fopen(self::LOG_FILE, 'ab');
-            if ($fh === false) return;
-            @flock($fh, LOCK_EX);
-            @fwrite($fh, $line);
-            @flock($fh, LOCK_UN);
-            @fclose($fh);
-            @chmod(self::LOG_FILE, 0600);
+            error_log(self::format($tag, $ctx));
         }
         catch (\Throwable $e) {
             // never let logging fail the request
@@ -45,7 +24,6 @@ final class DebugLog {
     }
 
     private static function format(string $tag, array $ctx): string {
-        $ts = date('Y-m-d H:i:s');
         $pid = getmypid();
 
         $user = 'anon';
@@ -68,6 +46,6 @@ final class DebugLog {
 
         $ctxStr = empty($ctx) ? '' : ' ' . json_encode($ctx, JSON_UNESCAPED_SLASHES);
 
-        return "[$ts pid=$pid] $tag user=$user $method $url$ctxStr\n";
+        return "[closet_inventory pid=$pid] $tag user=$user $method $url$ctxStr";
     }
 }
