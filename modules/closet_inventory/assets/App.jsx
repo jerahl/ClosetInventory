@@ -257,6 +257,14 @@ function App() {
     } catch (e) { toast(e.message); }
   };
 
+  const seedStarter = async () => {
+    try {
+      await apiPost("closet.seed", {});
+      toast("Starter data seeded.");
+      await loadList();
+    } catch (e) { toast(e.message); }
+  };
+
   const flaggedCount = closets.filter((c) => c.flagged).length;
 
   return React.createElement("div", { className: "app" + (navOpen ? " nav-open" : "") },
@@ -337,6 +345,7 @@ function App() {
                   onAddCloset: () => setModal({ kind: "add" }),
                   onFlag: (c) => setModal({ kind: "flag", closet: c }),
                   onRefreshCounters: refreshCounters,
+                  onSeed: seedStarter,
                   isAdmin: !!BOOT.isAdmin,
                 })
       )

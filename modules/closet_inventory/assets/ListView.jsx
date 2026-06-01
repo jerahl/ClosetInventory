@@ -43,7 +43,7 @@ function SortHead({ label, col, sort, setSort, alignRight }) {
   );
 }
 
-function ListView({ closets, query, onOpen, onAddCloset, onFlag, onRefreshCounters, isAdmin }) {
+function ListView({ closets, query, onOpen, onAddCloset, onFlag, onRefreshCounters, onSeed, isAdmin }) {
   const [school, setSchool] = React.useState("all");
   const [type, setType] = React.useState("all");
   const [flaggedOnly, setFlaggedOnly] = React.useState(false);
@@ -98,6 +98,24 @@ function ListView({ closets, query, onOpen, onAddCloset, onFlag, onRefreshCounte
           onClick: onRefreshCounters
         }, React.createElement(Ic.Network, null), "Refresh counters"),
         React.createElement("button", { className: "btn btn--primary", onClick: onAddCloset }, React.createElement(Ic.Plus, null), "Add closet")
+      )
+    ),
+
+    closets.length === 0 && React.createElement("div", {
+      className: "card",
+      style: { padding: 24, textAlign: "center", marginBottom: 16 }
+    },
+      React.createElement("div", { style: { fontSize: 16, fontWeight: 600, marginBottom: 6 } }, "No closets yet"),
+      React.createElement("p", { className: "page-desc", style: { marginTop: 0, marginBottom: 16 } },
+        "Add closets manually, or seed a small starter set to explore the app."
+      ),
+      React.createElement("div", { style: { display: "inline-flex", gap: 8 } },
+        React.createElement("button", { className: "btn btn--primary", onClick: onAddCloset },
+          React.createElement(Ic.Plus, null), "Add your first closet"
+        ),
+        isAdmin && onSeed && React.createElement("button", { className: "btn", onClick: onSeed },
+          React.createElement(Ic.Server, null), "Seed starter data"
+        )
       )
     ),
 
