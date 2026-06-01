@@ -790,6 +790,78 @@ class InventoryStore {
         ];
     }
 
+    /**
+     * Delete a single closet and every dependent row (switches, power_units,
+     * circuits, maintenance, photos). Manual cascade because the schema's FKs
+     * don't declare ON DELETE CASCADE. Returns the switches count so the
+     * caller can record it on the audit trail.
+     *
+     * @return array{deleted:bool, switches:int}
+     */
+    public function removeCloset(int $uid): array {
+        if ($uid <= 0) {
+            return ['deleted' => false, 'switches' => 0];
+        }
+        $row = \DBfetch(\DBselect('SELECT uid FROM tcs_closet_closets WHERE uid='.$uid));
+        if ($row === false || $row === null) {
+            return ['deleted' => false, 'switches' => 0];
+        }
+
+        $sn = \DBfetch(\DBselect('SELECT COUNT(*) AS n FROM tcs_closet_switches WHERE closet_uid='.$uid));
+        $switchCount = $sn !== false ? (int) $sn['n'] : 0;
+
+        \DBexecute('DELETE FROM tcs_closet_switches    WHERE closet_uid='.$uid);
+        \DBexecute('DELETE FROM tcs_closet_power_units WHERE closet_uid='.$uid);
+        \DBexecute('DELETE FROM tcs_closet_circuits    WHERE closet_uid='.$uid);
+        \DBexecute('DELETE FROM tcs_closet_maintenance WHERE closet_uid='.$uid);
+        \DBexecute('DELETE FROM tcs_closet_photos      WHERE closet_uid='.$uid);
+        \DBexecute('DELETE FROM tcs_closet_closets     WHERE uid='.$uid);
+
+        return ['deleted' => true, 'switches' => $switchCount];
+    }
+
+    /**
+     * Move a switch row to a different closet. Verifies both endpoints exist,
+     * is a no-op when the switch is already at the target, and recomputes the
+     * port counters for BOTH the source and target closets so the list view's
+     * cached totals stay consistent.
+     *
+     * @return array{ok:bool, sourceClosetUid:int, error?:string}
+     */
+    public function moveSwitch(int $switchId, int $targetClosetUid): array {
+        if ($switchId <= 0 || $targetClosetUid <= 0) {
+            return ['ok' => false, 'sourceClosetUid' => 0, 'error' => 'bad_input'];
+        }
+        $sw = \DBfetch(\DBselect(
+            'SELECT closet_uid AS source FROM tcs_closet_switches WHERE id='.$switchId
+        ));
+        if ($sw === false || $sw === null) {
+            return ['ok' => false, 'sourceClosetUid' => 0, 'error' => 'switch_not_found'];
+        }
+        $source = (int) $sw['source'];
+
+        $target = \DBfetch(\DBselect(
+            'SELECT uid FROM tcs_closet_closets WHERE uid='.$targetClosetUid
+        ));
+        if ($target === false || $target === null) {
+            return ['ok' => false, 'sourceClosetUid' => $source, 'error' => 'target_closet_not_found'];
+        }
+
+        if ($source === $targetClosetUid) {
+            return ['ok' => true, 'sourceClosetUid' => $source];
+        }
+
+        \DBexecute(
+            'UPDATE tcs_closet_switches SET closet_uid='.$targetClosetUid
+            .' WHERE id='.$switchId
+        );
+
+        $this->recomputePortCounters($source);
+        $this->recomputePortCounters($targetClosetUid);
+
+        return ['ok' => true, 'sourceClosetUid' => $source];
+    }
+
     public function audit(string $action, string $target, string $result): void {
         try {
             $this->dbInsert('tcs_closet_audit', [

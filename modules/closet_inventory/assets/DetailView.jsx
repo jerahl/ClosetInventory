@@ -1,6 +1,6 @@
 /* Closet detail view. */
 
-function SwitchRow({ s, zabbixSource }) {
+function SwitchRow({ s, zabbixSource, onMove }) {
   const pct = Math.round((s.used / s.ports) * 100);
   const hasHost = s.zabbixHostid != null && s.zabbixHostid !== "";
   const hasXiq  = s.xiqDeviceId != null && +s.xiqDeviceId > 0;
@@ -88,7 +88,13 @@ function SwitchRow({ s, zabbixSource }) {
             disabled: true,
             style: { opacity: 0.55, pointerEvents: "none" },
             title: "PoE cycle not configured — set {$RCONFIG.POE_SNIPPET_ID} to enable"
-          }, React.createElement(Ic.Bolt, null), "Cycle PoE"))
+          }, React.createElement(Ic.Bolt, null), "Cycle PoE")),
+        onMove && React.createElement("div", { className: "spec", style: (s.poe === true || s.poeStatus === "DeliveringPower") ? null : { marginLeft: "auto" } },
+          React.createElement("button", {
+            className: "btn btn--sm",
+            onClick: () => onMove(s),
+            title: "Move this switch to another closet"
+          }, React.createElement(Ic.Switch, null), "Move"))
       )
     )
   );
@@ -215,7 +221,7 @@ function ProblemsBlock({ problems }) {
   );
 }
 
-function DetailView({ closet, onFlag, onResolve, onEdit, onAddSwitch, onAddMaint, onEditPower }) {
+function DetailView({ closet, onFlag, onResolve, onEdit, onAddSwitch, onAddMaint, onEditPower, onDelete, onMove }) {
   const c = closet;
   const s = schoolOf(c.schoolId);
   const [photo, setPhoto] = React.useState(null);
@@ -239,7 +245,16 @@ function DetailView({ closet, onFlag, onResolve, onEdit, onAddSwitch, onAddMaint
           c.flagged
             ? React.createElement("button", { className: "btn btn--sm", onClick: () => onResolve(c) }, React.createElement(Ic.Check, null), "Resolve flag")
             : React.createElement("button", { className: "btn btn--sm btn--danger", onClick: () => onFlag(c) }, React.createElement(Ic.Flag, null), "Flag for service"),
-          React.createElement("button", { className: "btn btn--sm btn--primary", onClick: () => onEdit(c) }, React.createElement(Ic.Edit, null), "Edit")
+          React.createElement("button", { className: "btn btn--sm btn--primary", onClick: () => onEdit(c) }, React.createElement(Ic.Edit, null), "Edit"),
+          onDelete && React.createElement("button", {
+            className: "btn btn--sm",
+            onClick: () => onDelete(c),
+            title: "Delete this closet and every dependent row",
+            style: {
+              color: "var(--red, #c44)",
+              borderColor: "color-mix(in oklch, var(--red, #c44) 30%, transparent)"
+            }
+          }, React.createElement(Ic.Trash, null), "Delete closet")
         )
       ),
       React.createElement("div", { className: "detail-meta" },
@@ -271,7 +286,7 @@ function DetailView({ closet, onFlag, onResolve, onEdit, onAddSwitch, onAddMaint
             React.createElement("button", { className: "btn btn--sm panel-act", onClick: () => onAddSwitch(c) }, React.createElement(Ic.Plus, null), "Add")
           ),
           React.createElement("div", { className: "panel__body panel__body--flush" },
-            c.switches.map((sw, i) => React.createElement(SwitchRow, { key: i, s: sw, zabbixSource: (c._live && c._live.sources && c._live.sources.zabbix) || null }))
+            c.switches.map((sw, i) => React.createElement(SwitchRow, { key: i, s: sw, zabbixSource: (c._live && c._live.sources && c._live.sources.zabbix) || null, onMove: onMove ? (s) => onMove(c, s) : null }))
           )
         ),
         React.createElement(ProblemsBlock, { problems: (c._live && Array.isArray(c._live.problems)) ? c._live.problems : [] }),

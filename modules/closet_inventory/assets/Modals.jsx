@@ -458,4 +458,42 @@ function PowerFormModal({ closet, onClose, onSave }) {
   );
 }
 
-Object.assign(window, { ClosetFormModal, FlagModal, SwitchFormModal, MaintFormModal, PowerFormModal });
+function MoveSwitchModal({ closet, sw, closets, onClose, onSave }) {
+  const [target, setTarget] = React.useState("");
+  const candidates = (closets || []).filter((c) => c.uid !== closet.uid);
+  const valid = target !== "" && +target > 0;
+  return React.createElement(Modal, {
+    title: "Move switch",
+    sub: sw.name,
+    icon: React.createElement(Ic.Switch, null),
+    onClose,
+    footer: React.createElement(React.Fragment, null,
+      React.createElement("button", { className: "btn", onClick: onClose }, "Cancel"),
+      React.createElement("button", {
+        className: "btn btn--primary",
+        disabled: !valid,
+        style: !valid ? { opacity: .5, pointerEvents: "none" } : null,
+        onClick: () => onSave({ targetClosetUid: +target })
+      }, React.createElement(Ic.Check, null), "Move")
+    ),
+  },
+    React.createElement(Field, { label: "Currently in" },
+      React.createElement("input", { className: "input mono", disabled: true, value: closet.code + " — " + (closet.building || "") + ", " + (closet.room || ""), style: { color: "var(--muted)", background: "var(--surface-2)" } })),
+    React.createElement(Field, { label: "Move to", req: true },
+      React.createElement("select", {
+        value: target,
+        onChange: (e) => setTarget(e.target.value),
+        autoFocus: true
+      },
+        React.createElement("option", { value: "" }, "Select a closet…"),
+        candidates.map((c) => {
+          const sch = (typeof schoolOf === "function") ? schoolOf(c.schoolId) : null;
+          const schName = sch && sch.name ? sch.name + " · " : "";
+          return React.createElement("option", { key: c.uid, value: c.uid },
+            c.code + " — " + schName + (c.building || "") + ", " + (c.room || ""));
+        })
+      ))
+  );
+}
+
+Object.assign(window, { ClosetFormModal, FlagModal, SwitchFormModal, MaintFormModal, PowerFormModal, MoveSwitchModal });

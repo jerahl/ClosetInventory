@@ -258,6 +258,26 @@ function App() {
     } catch (e) { toast(e.message); }
   };
 
+  const deleteCloset = async (c) => {
+    if (!window.confirm("Delete " + c.code + " and all its switches, power, photos, and maintenance?")) return;
+    try {
+      await apiPost("closet.delete", { uid: c.uid });
+      toast("Closet " + c.code + " deleted.");
+      goList();
+      await loadList();
+    } catch (e) { toast(e.message); }
+  };
+
+  const moveSwitch = async (sw, { targetClosetUid }) => {
+    try {
+      await apiPost("closet.switch.move", { switchId: sw.id, targetClosetUid });
+      toast("Switch moved.");
+      setModal(null);
+      await loadList();
+      if (route.uid != null) await loadDetail(route.uid);
+    } catch (e) { toast(e.message); }
+  };
+
   const refreshCounters = async () => {
     try {
       const body = await apiPost("closet.counters.refresh", {});
@@ -359,6 +379,8 @@ function App() {
                     onAddSwitch: (c) => setModal({ kind: "switch", closet: c }),
                     onAddMaint: (c) => setModal({ kind: "maint", closet: c }),
                     onEditPower: (c) => setModal({ kind: "power", closet: c }),
+                    onDelete: deleteCloset,
+                    onMove: (c, sw) => setModal({ kind: "move", closet: c, sw }),
                   }))
               : React.createElement(ListView, {
                   closets, query,
@@ -383,6 +405,8 @@ function App() {
       React.createElement(MaintFormModal, { closet: modal.closet, onClose: () => setModal(null), onSave: addMaint }),
     modal && modal.kind === "power" &&
       React.createElement(PowerFormModal, { closet: modal.closet, onClose: () => setModal(null), onSave: savePower }),
+    modal && modal.kind === "move" &&
+      React.createElement(MoveSwitchModal, { closet: modal.closet, sw: modal.sw, closets, onClose: () => setModal(null), onSave: (payload) => moveSwitch(modal.sw, payload) }),
 
     React.createElement("div", { className: "toast-wrap" },
       toasts.map((t) => React.createElement(Toast, {
