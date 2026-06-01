@@ -498,4 +498,66 @@ function MoveSwitchModal({ closet, sw, closets, onClose, onSave }) {
   );
 }
 
-Object.assign(window, { ClosetFormModal, FlagModal, SwitchFormModal, MaintFormModal, PowerFormModal, MoveSwitchModal });
+function SwitchInspectModal({ closet, sw, onClose }) {
+  const ipt = (k, v, mono) => v == null || v === "" ? null
+    : React.createElement("div", { className: "spec", style: { minWidth: 160 } },
+        React.createElement("div", { className: "spec__k" }, k),
+        React.createElement("div", { className: "spec__v" + (mono ? " mono" : "") }, String(v)));
+
+  const tag = (text, tone) => React.createElement("span", {
+    className: "uplink-tag",
+    style: tone === "ok"  ? { background: "var(--teal-soft)", color: "var(--teal)", borderColor: "color-mix(in oklch, var(--teal) 25%, transparent)" }
+         : tone === "warn"? { background: "var(--amber-soft)", color: "var(--amber)", borderColor: "color-mix(in oklch, var(--amber) 25%, transparent)" }
+         : tone === "bad" ? { background: "var(--surface-2)", color: "var(--red, #c44)", borderColor: "color-mix(in oklch, var(--red, #c44) 25%, transparent)" }
+                          : { background: "var(--surface-2)", color: "var(--muted)", borderColor: "var(--border)" }
+  }, text);
+
+  const live = [];
+  if (sw.poeStatus) live.push(tag("PoE: " + sw.poeStatus, "ok"));
+  if (sw.xiqConnected !== undefined) live.push(tag(sw.xiqConnected ? "XIQ: online" : "XIQ: offline", sw.xiqConnected ? "ok" : null));
+  if (sw.configBackupAgeDays != null) {
+    const d = +sw.configBackupAgeDays;
+    const tone = d <= 7 ? "ok" : (d <= 30 ? "warn" : "bad");
+    live.push(tag(`Backup ${d}d ${d > 30 ? "old" : "ago"}`, tone));
+  }
+  if (sw.xiqLastSeen) live.push(tag("XIQ last seen: " + sw.xiqLastSeen, null));
+  if (sw.xiqSoftware) live.push(tag("Software: " + sw.xiqSoftware, null));
+
+  return React.createElement(Modal, {
+    title: sw.name + (sw.stack > 1 ? ` — Stack ×${sw.stack}` : ""),
+    sub: closet ? closet.code : null,
+    icon: React.createElement(Ic.Switch, null),
+    wide: true,
+    onClose,
+    footer: React.createElement("button", { className: "btn", onClick: onClose }, "Close")
+  },
+    React.createElement("div", { className: "panel__sub", style: { marginBottom: 10, fontWeight: 600 } }, "Identity"),
+    React.createElement("div", { className: "swrow__specs", style: { marginBottom: 18 } },
+      ipt("Vendor", sw.vendor),
+      ipt("Model", sw.model),
+      ipt("Serial", sw.serial, true),
+      ipt("Mgmt IP", sw.mgmtIp, true),
+      ipt("Stack size", sw.stack > 1 ? sw.stack + " members" : "single unit")
+    ),
+    React.createElement("div", { className: "panel__sub", style: { marginBottom: 10, fontWeight: 600 } }, "Ports & power"),
+    React.createElement("div", { className: "swrow__specs", style: { marginBottom: 18 } },
+      React.createElement("div", { className: "spec", style: { minWidth: 180 } },
+        React.createElement("div", { className: "spec__k" }, "Port usage"),
+        React.createElement("div", { style: { marginTop: 4 } }, React.createElement(PortBar, { used: sw.used, total: sw.ports, width: 120 }))),
+      ipt("Uplinks", sw.uplinks ? `${sw.uplinks} × ${sw.uplinkSpeed}` : null),
+      ipt("PoE", sw.poe ? "Yes" : "No")
+    ),
+    React.createElement("div", { className: "panel__sub", style: { marginBottom: 10, fontWeight: 600 } }, "External mappings"),
+    React.createElement("div", { className: "swrow__specs", style: { marginBottom: 18 } },
+      ipt("Zabbix host id", sw.zabbixHostid || "—", true),
+      ipt("XIQ device id",  sw.xiqDeviceId  || "—", true),
+      ipt("rConfig device id", sw.rconfigDeviceId || "—", true)
+    ),
+    live.length > 0 && React.createElement(React.Fragment, null,
+      React.createElement("div", { className: "panel__sub", style: { marginBottom: 10, fontWeight: 600 } }, "Live state"),
+      React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 6 } }, live)
+    )
+  );
+}
+
+Object.assign(window, { ClosetFormModal, FlagModal, SwitchFormModal, MaintFormModal, PowerFormModal, MoveSwitchModal, SwitchInspectModal });

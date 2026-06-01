@@ -1,6 +1,6 @@
 /* Closet detail view. */
 
-function SwitchRow({ s, zabbixSource, onMove }) {
+function SwitchRow({ s, zabbixSource, onMove, onInspect }) {
   const pct = Math.round((s.used / s.ports) * 100);
   const hasHost = s.zabbixHostid != null && s.zabbixHostid !== "";
   const hasXiq  = s.xiqDeviceId != null && +s.xiqDeviceId > 0;
@@ -27,7 +27,15 @@ function SwitchRow({ s, zabbixSource, onMove }) {
       style: { background: "var(--amber-soft)", color: "var(--amber)", borderColor: "color-mix(in oklch, var(--amber) 25%, transparent)" }
     }, "Zabbix unreachable — showing authored values");
   }
-  return React.createElement("div", { className: "swrow" },
+  return React.createElement("div", {
+    className: "swrow",
+    role: onInspect ? "button" : null,
+    tabIndex: onInspect ? 0 : null,
+    onClick: onInspect ? () => onInspect(s) : null,
+    onKeyDown: onInspect ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onInspect(s); } } : null,
+    style: onInspect ? { cursor: "pointer" } : null,
+    title: onInspect ? "Click for switch inventory details" : null
+  },
     React.createElement("div", { className: "swrow__icon" }, React.createElement(Ic.Switch, null)),
     React.createElement("div", { className: "swrow__main" },
       React.createElement("div", { className: "swrow__name" }, s.name,
@@ -82,17 +90,10 @@ function SwitchRow({ s, zabbixSource, onMove }) {
         React.createElement("div", { className: "spec" },
           React.createElement("div", { className: "spec__k" }, "Serial"),
           React.createElement("div", { className: "spec__v" }, s.serial)),
-        (s.poe === true || s.poeStatus === "DeliveringPower") && React.createElement("div", { className: "spec", style: { marginLeft: "auto" } },
+        onMove && React.createElement("div", { className: "spec", style: { marginLeft: "auto" } },
           React.createElement("button", {
             className: "btn btn--sm",
-            disabled: true,
-            style: { opacity: 0.55, pointerEvents: "none" },
-            title: "PoE cycle not configured — set {$RCONFIG.POE_SNIPPET_ID} to enable"
-          }, React.createElement(Ic.Bolt, null), "Cycle PoE")),
-        onMove && React.createElement("div", { className: "spec", style: (s.poe === true || s.poeStatus === "DeliveringPower") ? null : { marginLeft: "auto" } },
-          React.createElement("button", {
-            className: "btn btn--sm",
-            onClick: () => onMove(s),
+            onClick: (e) => { e.stopPropagation(); onMove(s); },
             title: "Move this switch to another closet"
           }, React.createElement(Ic.Switch, null), "Move"))
       )
@@ -221,7 +222,7 @@ function ProblemsBlock({ problems }) {
   );
 }
 
-function DetailView({ closet, onFlag, onResolve, onEdit, onAddSwitch, onAddMaint, onEditPower, onDelete, onMove }) {
+function DetailView({ closet, onFlag, onResolve, onEdit, onAddSwitch, onAddMaint, onEditPower, onDelete, onMove, onInspect }) {
   const c = closet;
   const s = schoolOf(c.schoolId);
   const [photo, setPhoto] = React.useState(null);
@@ -286,7 +287,12 @@ function DetailView({ closet, onFlag, onResolve, onEdit, onAddSwitch, onAddMaint
             React.createElement("button", { className: "btn btn--sm panel-act", onClick: () => onAddSwitch(c) }, React.createElement(Ic.Plus, null), "Add")
           ),
           React.createElement("div", { className: "panel__body panel__body--flush" },
-            c.switches.map((sw, i) => React.createElement(SwitchRow, { key: i, s: sw, zabbixSource: (c._live && c._live.sources && c._live.sources.zabbix) || null, onMove: onMove ? (s) => onMove(c, s) : null }))
+            c.switches.map((sw, i) => React.createElement(SwitchRow, {
+              key: i, s: sw,
+              zabbixSource: (c._live && c._live.sources && c._live.sources.zabbix) || null,
+              onMove: onMove ? (s) => onMove(c, s) : null,
+              onInspect: onInspect ? (s) => onInspect(c, s) : null
+            }))
           )
         ),
         React.createElement(ProblemsBlock, { problems: (c._live && Array.isArray(c._live.problems)) ? c._live.problems : [] }),

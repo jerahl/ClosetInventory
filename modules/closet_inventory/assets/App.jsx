@@ -381,6 +381,7 @@ function App() {
                     onEditPower: (c) => setModal({ kind: "power", closet: c }),
                     onDelete: deleteCloset,
                     onMove: (c, sw) => setModal({ kind: "move", closet: c, sw }),
+                    onInspect: (c, sw) => setModal({ kind: "inspect", closet: c, sw }),
                   }))
               : React.createElement(ListView, {
                   closets, query,
@@ -407,6 +408,8 @@ function App() {
       React.createElement(PowerFormModal, { closet: modal.closet, onClose: () => setModal(null), onSave: savePower }),
     modal && modal.kind === "move" &&
       React.createElement(MoveSwitchModal, { closet: modal.closet, sw: modal.sw, closets, onClose: () => setModal(null), onSave: (payload) => moveSwitch(modal.sw, payload) }),
+    modal && modal.kind === "inspect" &&
+      React.createElement(SwitchInspectModal, { closet: modal.closet, sw: modal.sw, onClose: () => setModal(null) }),
 
     React.createElement("div", { className: "toast-wrap" },
       toasts.map((t) => React.createElement(Toast, {
