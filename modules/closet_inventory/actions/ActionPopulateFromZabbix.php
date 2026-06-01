@@ -73,7 +73,7 @@ class ActionPopulateFromZabbix extends CController {
             // / Site/Video/... naming. Comparison is case-insensitive on the
             // suffix; substring compare against /Wireless/ catches every
             // nesting depth.
-            $excludedSegments = ['/wireless/', '/video/'];
+            $excludedSegments = ['/wireless/', '/video/', '/servers/', '/wireless aps/'];
             $isExcludedGroup = static function (string $name) use ($excludedSegments): bool {
                 $needle = '/' . strtolower($name) . '/';
                 foreach ($excludedSegments as $seg) {
