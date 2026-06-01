@@ -61,16 +61,27 @@ class ActionPopulateFromZabbix extends CController {
                 'closetsCreated'  => 0,
                 'switchesCreated' => 0,
                 'hostsScanned'    => 0,
+                'skipped'         => [],
                 'errors'          => []
             ];
 
             $groups = SchoolMapper::fetchZbxGroupsByPrefix('Site/');
             DebugLog::log('ActionPopulateFromZabbix.groups', ['count' => count($groups)]);
 
+            // Non-school Site/* groups that should be skipped on import.
+            // Lower-cased comparison so 'Site/Wireless' and 'site/wireless' both match.
+            $excludedSuffixes = ['wireless', 'video'];
+
             foreach ($groups as $g) {
                 $groupName = (string) ($g['name']    ?? '');
                 $groupId   = (string) ($g['groupid'] ?? '');
                 if ($groupName === '' || $groupId === '') {
+                    continue;
+                }
+
+                $suffix = strtolower(trim(substr($groupName, strlen('Site/'))));
+                if (in_array($suffix, $excludedSuffixes, true)) {
+                    $report['skipped'][] = $groupName;
                     continue;
                 }
 
