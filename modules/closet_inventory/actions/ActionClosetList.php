@@ -14,10 +14,6 @@ use CControllerResponseFatal;
  */
 class ActionClosetList extends ActionBase {
 
-    protected function init(): void {
-        // Page shell uses a static container, no validatable input.
-    }
-
     protected function checkInput(): bool {
         return true;
     }

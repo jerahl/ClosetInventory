@@ -15,6 +15,10 @@ use Modules\ClosetInventory\Lib\DebugLog;
  */
 abstract class ActionBase extends CController {
 
+    protected function init(): void {
+        $this->disableCsrfValidation();
+    }
+
     protected function checkPermissions(): bool {
         $loggedIn = CWebUser::isLoggedIn();
         $type = $loggedIn ? $this->getUserType() : -1;
