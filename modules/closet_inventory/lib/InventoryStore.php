@@ -3,7 +3,6 @@
 namespace Modules\ClosetInventory\Lib;
 
 use CWebUser;
-use DB;
 
 /**
  * CRUD for closet_inventory's authored tables. All access goes through
@@ -14,6 +13,54 @@ use DB;
  * never lives in here — that's the enrichment layer, wired in Phase 2+.
  */
 class InventoryStore {
+
+    /**
+     * Raw INSERT for a custom table not registered in Zabbix's schema metadata.
+     * Returns the LAST_INSERT_ID for AUTO_INCREMENT tables, or 0 for tables
+     * with a non-auto primary key (caller knows what to expect).
+     *
+     * @param array<string, mixed> $row column => value pairs
+     */
+    private function dbInsert(string $table, array $row): int {
+        $cols = [];
+        $vals = [];
+        foreach ($row as $col => $val) {
+            $cols[] = $col;
+            $vals[] = self::sqlLiteral($val);
+        }
+        \DBexecute('INSERT INTO ' . $table . ' (' . implode(',', $cols) . ') VALUES (' . implode(',', $vals) . ')');
+        $row = \DBfetch(\DBselect('SELECT LAST_INSERT_ID() AS id'));
+        return $row !== false ? (int)$row['id'] : 0;
+    }
+
+    /**
+     * Raw UPDATE for a custom table not registered in Zabbix's schema metadata.
+     *
+     * @param array<string, mixed> $values column => value pairs to SET
+     * @param array<string, mixed> $where  column => value pairs to AND in WHERE
+     */
+    private function dbUpdate(string $table, array $values, array $where): void {
+        if (empty($values) || empty($where)) {
+            return;
+        }
+        $set = [];
+        foreach ($values as $col => $val) {
+            $set[] = $col . '=' . self::sqlLiteral($val);
+        }
+        $cond = [];
+        foreach ($where as $col => $val) {
+            $cond[] = $col . '=' . self::sqlLiteral($val);
+        }
+        \DBexecute('UPDATE ' . $table . ' SET ' . implode(',', $set) . ' WHERE ' . implode(' AND ', $cond));
+    }
+
+    private static function sqlLiteral($val): string {
+        if ($val === null)            return 'NULL';
+        if (is_bool($val))            return $val ? '1' : '0';
+        if (is_int($val))             return (string) $val;
+        if (is_float($val))           return rtrim(rtrim(sprintf('%.6F', $val), '0'), '.');
+        return \zbx_dbstr((string) $val);
+    }
 
     /** @return array<int, array<string, mixed>> */
     public function listClosets(): array {
@@ -218,10 +265,7 @@ class InventoryStore {
         $uid = isset($p['uid']) && (int) $p['uid'] > 0 ? (int) $p['uid'] : 0;
 
         if ($uid > 0) {
-            DB::update('tcs_closet_closets', [[
-                'values' => $fields,
-                'where'  => ['uid' => $uid]
-            ]]);
+            $this->dbUpdate('tcs_closet_closets', $fields, ['uid' => $uid]);
         }
         else {
             // Auto-generate code if caller didn't provide one. Match the
@@ -238,8 +282,7 @@ class InventoryStore {
                     ? $fields['school_id'].'-MDF'
                     : sprintf('%s-IDF-%d%02d', $fields['school_id'], (int) ($fields['floor'] ?? 1), $seq);
             }
-            $ids = DB::insert('tcs_closet_closets', [$fields], true);
-            $uid = (int) ($ids[0] ?? 0);
+            $uid = $this->dbInsert('tcs_closet_closets', $fields);
         }
 
         $this->recomputePortCounters($uid);
@@ -274,15 +317,11 @@ class InventoryStore {
         ];
 
         if ($id !== null && $id > 0) {
-            DB::update('tcs_closet_switches', [[
-                'values' => $fields,
-                'where'  => ['id' => $id]
-            ]]);
+            $this->dbUpdate('tcs_closet_switches', $fields, ['id' => $id]);
             $out = $id;
         }
         else {
-            $ids = DB::insert('tcs_closet_switches', [$fields], true);
-            $out = (int) ($ids[0] ?? 0);
+            $out = $this->dbInsert('tcs_closet_switches', $fields);
         }
 
         $this->recomputePortCounters($closetUid);
@@ -301,7 +340,7 @@ class InventoryStore {
         \DBexecute('DELETE FROM tcs_closet_circuits    WHERE closet_uid='.$closetUid);
 
         foreach (($p['upsList'] ?? []) as $u) {
-            DB::insert('tcs_closet_power_units', [[
+            $this->dbInsert('tcs_closet_power_units', [
                 'closet_uid' => $closetUid,
                 'kind'       => 'UPS',
                 'model'      => (string) ($u['model'] ?? ''),
@@ -311,12 +350,12 @@ class InventoryStore {
                 'runtime_min'=> (int)    ($u['runtimeMin'] ?? 0),
                 'outlets'    => null,
                 'load_amps'  => null
-            ]], true);
+            ]);
         }
 
         foreach (($p['pduList'] ?? []) as $d) {
             $amps = $d['loadAmps'] ?? null;
-            DB::insert('tcs_closet_power_units', [[
+            $this->dbInsert('tcs_closet_power_units', [
                 'closet_uid' => $closetUid,
                 'kind'       => 'PDU',
                 'model'      => (string) ($d['model'] ?? ''),
@@ -326,16 +365,16 @@ class InventoryStore {
                 'runtime_min'=> null,
                 'outlets'    => (int) ($d['outlets'] ?? 0),
                 'load_amps'  => ($amps === null || $amps === '') ? null : (float) $amps
-            ]], true);
+            ]);
         }
 
         foreach (($p['circuits'] ?? []) as $label) {
             $label = trim((string) $label);
             if ($label === '') continue;
-            DB::insert('tcs_closet_circuits', [[
+            $this->dbInsert('tcs_closet_circuits', [
                 'closet_uid' => $closetUid,
                 'label'      => $label
-            ]], true);
+            ]);
         }
 
         $this->touchUpdatedAt($closetUid);
@@ -347,16 +386,16 @@ class InventoryStore {
      * @param array<string, mixed> $p
      */
     public function appendMaintenance(int $closetUid, array $p): int {
-        $ids = DB::insert('tcs_closet_maintenance', [[
+        $newId = $this->dbInsert('tcs_closet_maintenance', [
             'closet_uid' => $closetUid,
             'date'       => (string) ($p['date'] ?? date('Y-m-d')),
             'type'       => (string) ($p['type'] ?? ''),
             'tone'       => (string) ($p['tone'] ?? 'default'),
             'tech'       => (string) ($p['tech'] ?? ''),
             'notes'      => (string) ($p['notes'] ?? '')
-        ]], true);
+        ]);
         $this->touchUpdatedAt($closetUid);
-        return (int) ($ids[0] ?? 0);
+        return $newId;
     }
 
     /**
@@ -370,16 +409,13 @@ class InventoryStore {
         $before  = \DBfetch(\DBselect('SELECT code, flag_reason FROM tcs_closet_closets WHERE uid='.$closetUid));
         $beforeReason = ($before !== false && isset($before['flag_reason'])) ? (string) $before['flag_reason'] : '';
 
-        DB::update('tcs_closet_closets', [[
-            'values' => [
-                'flagged'     => $flagged ? 1 : 0,
-                'flag_reason' => $flagged ? (string) ($p['reason'] ?? '') : null,
-                'flag_tech'   => $flagged ? (string) ($p['tech']   ?? '') : null,
-                'flag_date'   => $flagged ? (string) ($p['date']   ?? date('Y-m-d')) : null,
-                'updated_at'  => date('Y-m-d H:i:s')
-            ],
-            'where' => ['uid' => $closetUid]
-        ]]);
+        $this->dbUpdate('tcs_closet_closets', [
+            'flagged'     => $flagged ? 1 : 0,
+            'flag_reason' => $flagged ? (string) ($p['reason'] ?? '') : null,
+            'flag_tech'   => $flagged ? (string) ($p['tech']   ?? '') : null,
+            'flag_date'   => $flagged ? (string) ($p['date']   ?? date('Y-m-d')) : null,
+            'updated_at'  => date('Y-m-d H:i:s')
+        ], ['uid' => $closetUid]);
 
         if (!$flagged) {
             $this->appendMaintenance($closetUid, [
@@ -403,13 +439,13 @@ class InventoryStore {
      * before this is called.
      */
     public function recordPhoto(int $closetUid, string $label, string $path): int {
-        $ids = DB::insert('tcs_closet_photos', [[
+        $newId = $this->dbInsert('tcs_closet_photos', [
             'closet_uid' => $closetUid,
             'label'      => $label,
             'path'       => $path
-        ]], true);
+        ]);
         $this->touchUpdatedAt($closetUid);
-        return (int) ($ids[0] ?? 0);
+        return $newId;
     }
 
     /**
@@ -435,13 +471,13 @@ class InventoryStore {
             if ($exists !== false) {
                 continue;
             }
-            DB::insert('tcs_closet_schools', [[
+            $this->dbInsert('tcs_closet_schools', [
                 'id'        => (string) $s['id'],
                 'name'      => (string) $s['name'],
                 'type'      => (string) ($s['type'] ?? ''),
                 'zbx_group' => isset($s['zbxGroup']) ? (string) $s['zbxGroup'] : null,
                 'color_hue' => isset($s['colorHue']) ? (int)    $s['colorHue'] : null
-            ]], false);
+            ]);
         }
 
         foreach ($closets as $c) {
@@ -486,21 +522,18 @@ class InventoryStore {
         if ($existing !== false && $existing !== null) {
             $newGroup = isset($payload['zbxGroup']) ? (string) $payload['zbxGroup'] : null;
             if ($newGroup !== null && $newGroup !== '' && (string) ($existing['zbx_group'] ?? '') !== $newGroup) {
-                DB::update('tcs_closet_schools', [[
-                    'values' => ['zbx_group' => $newGroup],
-                    'where'  => ['id' => $id]
-                ]]);
+                $this->dbUpdate('tcs_closet_schools', ['zbx_group' => $newGroup], ['id' => $id]);
             }
             return ['id' => $id, 'created' => false];
         }
 
-        DB::insert('tcs_closet_schools', [[
+        $this->dbInsert('tcs_closet_schools', [
             'id'        => $id,
             'name'      => (string) ($payload['name'] ?? $id),
             'type'      => (string) ($payload['type'] ?? 'Elem'),
             'zbx_group' => isset($payload['zbxGroup']) ? (string) $payload['zbxGroup'] : null,
             'color_hue' => isset($payload['colorHue']) ? (int) $payload['colorHue'] : null
-        ]], false);
+        ]);
         return ['id' => $id, 'created' => true];
     }
 
@@ -540,10 +573,7 @@ class InventoryStore {
             }
             if ($updates !== []) {
                 $updates['updated_at'] = $now;
-                DB::update('tcs_closet_closets', [[
-                    'values' => $updates,
-                    'where'  => ['uid' => $uid]
-                ]]);
+                $this->dbUpdate('tcs_closet_closets', $updates, ['uid' => $uid]);
             }
             return ['uid' => $uid, 'created' => false];
         }
@@ -557,8 +587,8 @@ class InventoryStore {
             'room'       => isset($payload['room'])     ? (string) $payload['room']     : null,
             'updated_at' => $now
         ];
-        $ids = DB::insert('tcs_closet_closets', [$fields], true);
-        return ['uid' => (int) ($ids[0] ?? 0), 'created' => true];
+        $newUid = $this->dbInsert('tcs_closet_closets', $fields);
+        return ['uid' => $newUid, 'created' => true];
     }
 
     /**
@@ -612,10 +642,7 @@ class InventoryStore {
                 else { $updates[$col] = (string) $v; }
             }
             if ($updates !== []) {
-                DB::update('tcs_closet_switches', [[
-                    'values' => $updates,
-                    'where'  => ['id' => $id]
-                ]]);
+                $this->dbUpdate('tcs_closet_switches', $updates, ['id' => $id]);
                 $this->touchUpdatedAt($closetUid);
             }
             return ['id' => $id, 'created' => false];
@@ -638,8 +665,7 @@ class InventoryStore {
             'xiq_device_id'     => (isset($payload['xiqDeviceId'])     && (int) $payload['xiqDeviceId']     > 0) ? (int) $payload['xiqDeviceId']     : null,
             'rconfig_device_id' => (isset($payload['rconfigDeviceId']) && (int) $payload['rconfigDeviceId'] > 0) ? (int) $payload['rconfigDeviceId'] : null
         ];
-        $ids = DB::insert('tcs_closet_switches', [$fields], true);
-        $newId = (int) ($ids[0] ?? 0);
+        $newId = $this->dbInsert('tcs_closet_switches', $fields);
         $this->recomputePortCounters($closetUid);
         return ['id' => $newId, 'created' => true];
     }
@@ -657,14 +683,11 @@ class InventoryStore {
         $tot  = $row !== false ? (int) $row['tot']  : 0;
         $used = $row !== false ? (int) $row['used'] : 0;
 
-        DB::update('tcs_closet_closets', [[
-            'values' => [
-                'ports_total' => $tot,
-                'ports_used'  => $used,
-                'updated_at'  => date('Y-m-d H:i:s')
-            ],
-            'where' => ['uid' => $closetUid]
-        ]]);
+        $this->dbUpdate('tcs_closet_closets', [
+            'ports_total' => $tot,
+            'ports_used'  => $used,
+            'updated_at'  => date('Y-m-d H:i:s')
+        ], ['uid' => $closetUid]);
     }
 
     /**
@@ -674,32 +697,28 @@ class InventoryStore {
      * fan out to Zabbix.
      */
     public function updateCounters(int $uid, int $total, int $used): void {
-        DB::update('tcs_closet_closets', [[
-            'values' => [
-                'ports_total' => $total,
-                'ports_used'  => $used,
-                'updated_at'  => date('Y-m-d H:i:s')
-            ],
-            'where' => ['uid' => $uid]
-        ]]);
+        $this->dbUpdate('tcs_closet_closets', [
+            'ports_total' => $total,
+            'ports_used'  => $used,
+            'updated_at'  => date('Y-m-d H:i:s')
+        ], ['uid' => $uid]);
     }
 
     private function touchUpdatedAt(int $closetUid): void {
-        DB::update('tcs_closet_closets', [[
-            'values' => ['updated_at' => date('Y-m-d H:i:s')],
-            'where'  => ['uid' => $closetUid]
-        ]]);
+        $this->dbUpdate('tcs_closet_closets', [
+            'updated_at' => date('Y-m-d H:i:s')
+        ], ['uid' => $closetUid]);
     }
 
     public function audit(string $action, string $target, string $result): void {
         try {
-            DB::insert('tcs_closet_audit', [[
+            $this->dbInsert('tcs_closet_audit', [
                 'ts'     => date('Y-m-d H:i:s'),
                 'userid' => (string) (CWebUser::$data['userid'] ?? '0'),
                 'action' => $action,
                 'target' => $target,
                 'result' => $result
-            ]], true);
+            ]);
         }
         catch (\Throwable $e) {
             // Auditing must never break the actual write.
