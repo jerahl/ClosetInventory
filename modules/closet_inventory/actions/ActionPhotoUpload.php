@@ -69,10 +69,23 @@ class ActionPhotoUpload extends CController {
             }
 
             $f = $_FILES['photo'];
-            if ((int) ($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            $errCode = (int) ($f['error'] ?? UPLOAD_ERR_NO_FILE);
+            if ($errCode !== UPLOAD_ERR_OK) {
+                $iniUpload = ini_get('upload_max_filesize');
+                $iniPost   = ini_get('post_max_size');
+                $errMap = [
+                    UPLOAD_ERR_INI_SIZE   => "file is larger than the server's upload_max_filesize (currently $iniUpload). Raise upload_max_filesize and post_max_size in php.ini.",
+                    UPLOAD_ERR_FORM_SIZE  => 'file exceeds the form MAX_FILE_SIZE limit.',
+                    UPLOAD_ERR_PARTIAL    => 'upload was interrupted; try again.',
+                    UPLOAD_ERR_NO_FILE    => 'no file was sent.',
+                    UPLOAD_ERR_NO_TMP_DIR => 'PHP is missing a temp directory.',
+                    UPLOAD_ERR_CANT_WRITE => 'PHP failed to write the temp file to disk.',
+                    UPLOAD_ERR_EXTENSION  => 'a PHP extension blocked the upload.'
+                ];
+                $msg = $errMap[$errCode] ?? "unknown upload error ($errCode).";
                 http_response_code(400);
                 $this->setResponse(new CControllerResponseData([
-                    'main_block' => json_encode(['ok' => false, 'error' => 'upload error '.(int) $f['error']])
+                    'main_block' => json_encode(['ok' => false, 'error' => $msg, 'errCode' => $errCode, 'iniUpload' => $iniUpload, 'iniPost' => $iniPost])
                 ]));
                 return;
             }

@@ -183,15 +183,51 @@ function PhotosPanel({ photos, code, onOpenPhoto, onUpload, onDelete }) {
     fileRef.current.click();
   };
 
+  // Downscale a File to a JPEG Blob that fits within MAX_DIM on the long
+  // edge. iOS straight-from-camera photos can easily exceed PHP's default
+  // upload_max_filesize (2MB), so we shrink before sending. Files already
+  // small enough are passed through untouched.
+  const MAX_DIM = 2048;
+  const MAX_BYTES = 1.5 * 1024 * 1024;
+  const downscale = (file) => new Promise((resolve, reject) => {
+    if (!/^image\//i.test(file.type) || file.size <= MAX_BYTES) return resolve(file);
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, MAX_DIM / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.round(img.naturalWidth  * scale);
+        const h = Math.round(img.naturalHeight * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(url);
+          if (!blob) return resolve(file);
+          // wrap as a File so the server still gets a filename
+          const base = file.name.replace(/\.[^.]+$/, "") || "photo";
+          resolve(new File([blob], base + ".jpg", { type: "image/jpeg", lastModified: Date.now() }));
+        }, "image/jpeg", 0.85);
+      } catch (err) {
+        URL.revokeObjectURL(url);
+        resolve(file); // fall back to the original on any failure
+      }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+
   const handleFiles = async (e) => {
     const files = Array.from(e.target.files || []);
-    e.target.value = ""; // allow re-picking the same file
+    e.target.value = "";
     if (files.length === 0) return;
     const labelHint = (labelRef.current && labelRef.current.value) || "";
     setBusy(true);
     try {
-      for (const file of files) {
-        await onUpload(file, labelHint || file.name.replace(/\.[^.]+$/, ""));
+      for (const raw of files) {
+        const file = await downscale(raw);
+        await onUpload(file, labelHint || raw.name.replace(/\.[^.]+$/, ""));
       }
       if (labelRef.current) labelRef.current.value = "";
     } finally {
