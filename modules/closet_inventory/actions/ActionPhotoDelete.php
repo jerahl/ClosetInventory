@@ -15,7 +15,10 @@ use CWebUser;
  */
 class ActionPhotoDelete extends CController {
 
-    private const PHOTO_ROOT = '/var/lib/closet-inventory/photos';
+    private const PHOTO_ROOTS = [
+        '/var/lib/closet-inventory/photos',
+        '/tmp/closet_inventory_photos'
+    ];
 
     protected function init(): void {
         $this->disableCsrfValidation();
@@ -52,9 +55,14 @@ class ActionPhotoDelete extends CController {
 
             $path = (string) $row['path'];
             $real = realpath($path);
-            $rootReal = realpath(self::PHOTO_ROOT);
-            if ($real !== false && $rootReal !== false && strpos($real, $rootReal . '/') === 0 && is_file($real)) {
-                @unlink($real);
+            if ($real !== false && is_file($real)) {
+                foreach (self::PHOTO_ROOTS as $root) {
+                    $rootReal = realpath($root);
+                    if ($rootReal !== false && strpos($real, $rootReal . '/') === 0) {
+                        @unlink($real);
+                        break;
+                    }
+                }
             }
             \DBexecute('DELETE FROM tcs_closet_photos WHERE id='.$id);
 

@@ -16,7 +16,13 @@ use Modules\ClosetInventory\Lib\InventoryStore;
  */
 class ActionPhotoUpload extends CController {
 
-    private const PHOTO_ROOT     = '/var/lib/closet-inventory/photos';
+    // Tried in order. First writable path wins. The /tmp fallback is for
+    // demo / test environments; production should use the /var/lib path with
+    // ownership granted to the php-fpm user.
+    private const PHOTO_ROOTS = [
+        '/var/lib/closet-inventory/photos',
+        '/tmp/closet_inventory_photos'
+    ];
     private const MAX_BYTES      = 10 * 1024 * 1024;
     private const ALLOWED_EXT    = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
 
@@ -88,11 +94,15 @@ class ActionPhotoUpload extends CController {
                 return;
             }
 
-            $dir = self::PHOTO_ROOT.'/'.$closetUid;
-            if (!is_dir($dir) && !@mkdir($dir, 0750, true) && !is_dir($dir)) {
+            $dir = $this->resolveWritableDir($closetUid);
+            if ($dir === null) {
+                $diag = $this->dirDiagnostics($closetUid);
                 http_response_code(500);
                 $this->setResponse(new CControllerResponseData([
-                    'main_block' => json_encode(['ok' => false, 'error' => 'cannot create storage dir'])
+                    'main_block' => json_encode([
+                        'ok'    => false,
+                        'error' => 'cannot create storage dir: '.$diag
+                    ])
                 ]));
                 return;
             }
@@ -127,5 +137,56 @@ class ActionPhotoUpload extends CController {
                 'main_block' => json_encode(['ok' => false, 'error' => $e->getMessage()])
             ]));
         }
+    }
+
+    /**
+     * Walk PHOTO_ROOTS in order and return the first one where the per-closet
+     * subdirectory exists or can be created and is writable.
+     */
+    private function resolveWritableDir(int $closetUid): ?string {
+        foreach (self::PHOTO_ROOTS as $root) {
+            $dir = $root.'/'.$closetUid;
+            if (is_dir($dir) && is_writable($dir)) {
+                return $dir;
+            }
+            if (!is_dir($dir)) {
+                @mkdir($dir, 0750, true);
+                if (is_dir($dir) && is_writable($dir)) {
+                    return $dir;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Build a verbose diagnostic for the upload failure so the operator can
+     * fix permissions without guessing. Shows the running user, each tried
+     * path, the first existing ancestor, and its mode/owner.
+     */
+    private function dirDiagnostics(int $closetUid): string {
+        $parts = [];
+        $running = 'unknown';
+        if (function_exists('posix_geteuid') && function_exists('posix_getpwuid')) {
+            $pw = @posix_getpwuid(posix_geteuid());
+            if (is_array($pw)) {
+                $running = ($pw['name'] ?? '?').'(uid='.posix_geteuid().')';
+            }
+        }
+        $parts[] = 'php runs as '.$running;
+        foreach (self::PHOTO_ROOTS as $root) {
+            $info = $root;
+            $probe = $root;
+            while ($probe !== '/' && !file_exists($probe)) {
+                $probe = dirname($probe);
+            }
+            if (file_exists($probe)) {
+                $owner = function_exists('posix_getpwuid') ? @posix_getpwuid(fileowner($probe) ?: 0) : null;
+                $mode  = substr(sprintf('%o', @fileperms($probe) ?: 0), -4);
+                $info .= ' (parent '.$probe.' mode='.$mode.' owner='.($owner['name'] ?? '?').' writable='.(is_writable($probe) ? 'yes' : 'no').')';
+            }
+            $parts[] = $info;
+        }
+        return implode(' | ', $parts);
     }
 }

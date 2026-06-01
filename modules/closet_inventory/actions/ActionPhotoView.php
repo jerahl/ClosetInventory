@@ -16,7 +16,10 @@ use CWebUser;
  */
 class ActionPhotoView extends CController {
 
-    private const PHOTO_ROOT = '/var/lib/closet-inventory/photos';
+    private const PHOTO_ROOTS = [
+        '/var/lib/closet-inventory/photos',
+        '/tmp/closet_inventory_photos'
+    ];
 
     private const MIME = [
         'jpg'  => 'image/jpeg',
@@ -51,11 +54,20 @@ class ActionPhotoView extends CController {
             return;
         }
 
-        // Path must live under PHOTO_ROOT — resolve symlinks/relatives to a
-        // canonical path and reject anything that escapes the root.
-        $real     = realpath($path);
-        $rootReal = realpath(self::PHOTO_ROOT);
-        if ($real === false || $rootReal === false || strpos($real, $rootReal . '/') !== 0) {
+        // Path must live under one of the configured roots — resolve to a
+        // canonical path and reject anything that escapes them all.
+        $real = realpath($path);
+        $allowed = false;
+        if ($real !== false) {
+            foreach (self::PHOTO_ROOTS as $root) {
+                $rootReal = realpath($root);
+                if ($rootReal !== false && strpos($real, $rootReal . '/') === 0) {
+                    $allowed = true;
+                    break;
+                }
+            }
+        }
+        if (!$allowed) {
             $this->fail(403, 'invalid path');
             return;
         }
