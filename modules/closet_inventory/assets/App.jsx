@@ -16,7 +16,7 @@ async function apiGet(action, params) {
 }
 
 // Expose for cross-file callers (Modals.jsx etc.) once Babel evaluates this file.
-window.apiGet = (...a) => apiGet(...a);
+window.apiGet = apiGet;
 
 async function apiPost(action, fields) {
   const fd = new FormData();
@@ -32,7 +32,7 @@ async function apiPost(action, fields) {
   if (!body || body.ok !== true) throw new Error((body && body.error) || ("Save failed: " + action));
   return body;
 }
-window.apiPost = (...a) => apiPost(...a);
+window.apiPost = apiPost;
 
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "dark": true,
