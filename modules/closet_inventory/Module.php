@@ -95,8 +95,20 @@ class Module extends CModule {
             $current = (int) $row['version'];
         }
 
+        // Self-heal: if the version row says we're current but a required
+        // table is actually missing (e.g. an earlier install partially failed),
+        // force the install to re-run. CREATE TABLE IF NOT EXISTS is idempotent
+        // so this is safe even when most tables already exist.
         if ($current >= self::SCHEMA_TARGET) {
-            return;
+            $probe = \DBfetch(\DBselect("SHOW TABLES LIKE 'tcs_closet_schools'"));
+            if ($probe === false || $probe === null) {
+                \DBexecute('DELETE FROM tcs_closet_schema_version');
+                $current = 0;
+                DebugLog::log('Module.installSchema.selfHeal', ['reason' => 'tcs_closet_schools missing']);
+            }
+            else {
+                return;
+            }
         }
 
         $sqlFile = __DIR__.'/setup/schema.sql';
@@ -109,9 +121,14 @@ class Module extends CModule {
             return;
         }
 
-        // Strip /* */ comments and split on semicolons at end of line.
+        // Strip /* */ comments and -- line comments BEFORE splitting, so a
+        // file-leading comment doesn't cause its statement chunk to be
+        // dropped when filtered by "starts with --".
         $sql = preg_replace('!/\*.*?\*/!s', '', $sql) ?? '';
-        $statements = array_filter(array_map('trim', explode(";\n", $sql)), fn($s) => $s !== '' && !str_starts_with($s, '--'));
+        $lines = preg_split('/\r?\n/', $sql) ?: [];
+        $lines = array_map(fn($l) => preg_replace('/--.*$/', '', $l) ?? '', $lines);
+        $sql = implode("\n", $lines);
+        $statements = array_filter(array_map('trim', explode(";\n", $sql)), fn($s) => $s !== '');
 
         foreach ($statements as $stmt) {
             // Trim any trailing semicolon left from the last statement.
