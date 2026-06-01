@@ -92,6 +92,19 @@
 }
 html, body { background: var(--bg); transition: background .25s; }
 
+/* ---------- Mobile: neutralize Zabbix's outer-chrome min-width ----------
+   Zabbix's body / .wrapper / .container enforce a desktop-wide min-width
+   that forces side-scrolling on phones. Scope an override to our module's
+   root and let the inner layout shrink to the viewport. */
+#closet-root { width: 100%; max-width: 100vw; overflow-x: hidden; }
+@media (max-width: 860px) {
+  body, .wrapper, .container, main, .article {
+    min-width: 0 !important;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+}
+
 /* ---------- Density ---------- */
 [data-density="compact"] .tbl td { padding: 7px 16px; }
 [data-density="compact"] .tbl th { padding: 8px 16px; }
@@ -119,7 +132,7 @@ input, select, textarea { font-family: inherit; }
 *::-webkit-scrollbar-track { background: transparent; }
 
 /* ---------- App shell ---------- */
-.app { display: flex; min-height: 100vh; }
+.app { display: flex; min-height: 100vh; max-width: 100vw; overflow-x: hidden; }
 
 .sidebar {
   width: var(--sidebar-w);
@@ -182,8 +195,9 @@ input, select, textarea { font-family: inherit; }
 .main {
   flex: 1 1 auto;
   margin-left: var(--sidebar-w);
-  min-width: 0;
+  min-width: 0; max-width: 100%;
   display: flex; flex-direction: column;
+  overflow-x: hidden;
 }
 .topbar {
   height: var(--topbar-h);
@@ -193,6 +207,7 @@ input, select, textarea { font-family: inherit; }
   border-bottom: 1px solid var(--border);
   display: flex; align-items: center; gap: 14px;
   padding: 0 26px;
+  min-width: 0; max-width: 100%;
 }
 .topbar__menu { display: none; }
 .crumbs { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); min-width: 0; }
@@ -218,7 +233,7 @@ input, select, textarea { font-family: inherit; }
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px;
 }
 
-.content { padding: 26px; max-width: 1500px; width: 100%; }
+.content { padding: 26px; max-width: 1500px; width: 100%; min-width: 0; }
 
 /* ---------- Page header ---------- */
 .page-head { display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
