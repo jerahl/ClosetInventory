@@ -8,6 +8,7 @@ use CMenu;
 use CMenuItem;
 use DB;
 use DBException;
+use Modules\ClosetInventory\Lib\DebugLog;
 
 /**
  * Closet Inventory module bootstrap.
@@ -22,12 +23,25 @@ class Module extends CModule {
     private const SCHEMA_TARGET = 1;
 
     public function init(): void {
-        $this->registerMenu();
+        DebugLog::log('Module.init.enter', [
+            'phpVersion' => PHP_VERSION,
+            'manifest'   => __DIR__ . '/manifest.json',
+        ]);
+
+        try {
+            $this->registerMenu();
+            DebugLog::log('Module.init.menuRegistered');
+        }
+        catch (\Throwable $e) {
+            DebugLog::log('Module.init.menuFailed', ['error' => $e->getMessage()]);
+        }
 
         try {
             $this->installSchema();
+            DebugLog::log('Module.init.schemaOK');
         }
         catch (\Throwable $e) {
+            DebugLog::log('Module.init.schemaFailed', ['error' => $e->getMessage()]);
             // Never let a schema hiccup fatal-out the menu. Log via Zabbix's
             // error() helper if available.
             if (function_exists('error')) {
