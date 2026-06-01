@@ -5,7 +5,7 @@ namespace Modules\ClosetInventory\Actions;
 use CController;
 use CControllerResponseData;
 use CWebUser;
-use CSessionHelper;
+use CCsrfTokenHelper;
 
 /**
  * Base controller for page-render (HTML) actions in the Closet Inventory
@@ -28,20 +28,7 @@ abstract class ActionBase extends CController {
      * @return array<string, mixed>
      */
     protected function buildBoot(array $extra = []): array {
-        // TODO: confirm Zabbix CSRF helper for the target version. Recent
-        // Zabbix exposes CCsrfTokenHelper::get('closet') / ::check(); older
-        // versions surface the same token via the user session. Fallback to
-        // the sessionid string keeps the contract stable until the helper
-        // class is wired in.
-        $token = '';
-        if (class_exists('\\CCsrfTokenHelper')) {
-            try { $token = (string) \CCsrfTokenHelper::get('closet'); }
-            catch (\Throwable $e) { $token = ''; }
-        }
-        if ($token === '' && class_exists('\\CSessionHelper')) {
-            try { $token = (string) CSessionHelper::get('sessionid'); }
-            catch (\Throwable $e) { $token = ''; }
-        }
+        $token = (string) CCsrfTokenHelper::get('closet');
 
         $boot = [
             'csrf_token' => $token,

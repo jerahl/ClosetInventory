@@ -429,24 +429,27 @@ optional Vite build for assets.
 
 ---
 
-## 10. Open decisions — need answers before Phase 1
+## 10. Decisions (resolved)
 
-1. **Zabbix version target:** what's the production Zabbix version? Affects
-   `manifest_version` and a couple of API param shapes (e.g. `problem.get`
-   between 6.0 / 6.4 / 7.0).
-2. **School ↔ host-group mapping:** confirm `Site/*` prefix convention is
-   district-wide, or supply the actual group naming.
-3. **XIQ scope:** are switches actually managed in ExtremeCloud IQ, or is XIQ
-   AP-only at TCS? If AP-only, XIQ enrichment narrows to wireless context in
-   a closet and Phase 3 shrinks.
-4. **rConfig snippet:** confirm the PoE-cycle snippet id and its
-   `interface_name` placeholder format (`"1:7"` style) for `deploySnippet`.
-5. **Photos:** stored on the Zabbix frontend host's local disk
-   (`/var/lib/closet-inventory/photos/`), or an object store / network share
-   mounted in? Local disk is simplest; document it as the v1 default.
-6. **Schema install:** auto-run `setup/schema.sql` from `Module.php::init()`
-   (convenient) or require an admin to run it manually (safer)? Recommend
-   auto-run with a `tcs_closet_schema_version` row to track migrations.
+1. **Zabbix version:** **7.0 LTS**. Use `CCsrfTokenHelper` for CSRF;
+   `manifest_version: 2.0`. `problem.get` shape per 7.0.
+2. **School ↔ host-group mapping:** **`Site/*` prefix convention** is
+   district-wide. Mirror `reference/actions/ActionSwitches.php::collectFleet()`:
+   strip `Site/` to get the school name and slug to an id. Store the full
+   group name in `tcs_closet_schools.zbx_group`.
+3. **XIQ scope:** **Both switches and APs are managed in XIQ.** Phase 3 keeps
+   full scope: switch autofill from XIQ, reachability cross-check, wireless
+   context in a closet's view.
+4. **rConfig PoE-cycle snippet:** **Deferred.** Phase 4 ships the PoE-cycle
+   button visible-but-disabled with a "PoE cycle not configured" tooltip;
+   wire snippet id + interface format later (likely via `{$RCONFIG.POE_SNIPPET_ID}`
+   user macro).
+5. **Photo storage:** **Local disk on the Zabbix frontend host**, under
+   `/var/lib/closet-inventory/photos/<closet_uid>/`. Document backup
+   expectation in the module README.
+6. **Schema install:** **Auto-run from `Module.php::init()`**, gated by the
+   `tcs_closet_schema_version` row so subsequent migrations only apply pending
+   statements. Already wired in Phase 1.
 
 ---
 
