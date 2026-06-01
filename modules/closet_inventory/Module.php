@@ -4,10 +4,7 @@ namespace Modules\ClosetInventory;
 
 use APP;
 use Zabbix\Core\CModule;
-use CMenu;
 use CMenuItem;
-use DB;
-use DBException;
 use Modules\ClosetInventory\Lib\DebugLog;
 
 /**
@@ -62,19 +59,21 @@ class Module extends CModule {
     }
 
     private function registerMenu(): void {
-        /** @var CMenu $menu */
-        $menu = APP::Component()->get('menu.main');
-        if ($menu === null) {
+        $main_menu = APP::Component()->get('menu.main');
+        if ($main_menu === null) {
+            DebugLog::log('Module.registerMenu.noMenu');
             return;
         }
 
-        $submenu = (new CMenuItem(_('Switch closets')))
-            ->setAction('closet.list');
+        $monitoring = $main_menu->find(_('Monitoring'));
+        if ($monitoring === null) {
+            DebugLog::log('Module.registerMenu.noMonitoring');
+            return;
+        }
 
-        $top = (new CMenuItem(_('Closet Inventory')))
-            ->setSubMenu(new CMenu([$submenu]));
-
-        $menu->add($top);
+        $submenu = $monitoring->getSubmenu();
+        $submenu->add((new CMenuItem(_('Closet Inventory')))->setAction('closet.list'));
+        DebugLog::log('Module.registerMenu.added', ['under' => 'Monitoring']);
     }
 
     /**
