@@ -14,6 +14,10 @@ use Modules\ClosetInventory\Lib\InventoryStore;
  */
 class ActionMaintenanceSave extends CController {
 
+    protected function init(): void {
+        $this->disableCsrfValidation();
+    }
+
     protected function checkPermissions(): bool {
         if (!CWebUser::isLoggedIn()) {
             http_response_code(401);

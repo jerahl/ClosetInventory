@@ -20,6 +20,10 @@ class ActionPhotoUpload extends CController {
     private const MAX_BYTES      = 10 * 1024 * 1024;
     private const ALLOWED_EXT    = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
 
+    protected function init(): void {
+        $this->disableCsrfValidation();
+    }
+
     protected function checkPermissions(): bool {
         if (!CWebUser::isLoggedIn()) {
             http_response_code(401);
