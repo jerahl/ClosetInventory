@@ -57,48 +57,77 @@ class ActionPopulateFromZabbix extends CController {
         try {
             $store = new InventoryStore();
             $report = [
-                'schoolsCreated'  => 0,
-                'closetsCreated'  => 0,
-                'switchesCreated' => 0,
-                'hostsScanned'    => 0,
-                'skipped'         => [],
-                'removed'         => [],
-                'errors'          => []
+                'schoolsCreated'   => 0,
+                'closetsCreated'   => 0,
+                'switchesCreated'  => 0,
+                'hostsScanned'     => 0,
+                'hostsExcluded'    => 0,
+                'switchesRemoved'  => 0,
+                'errors'           => []
             ];
+
+            // Hosts in any of these top-level group prefixes are excluded from
+            // import (wireless APs and IP-camera infrastructure live alongside
+            // switches in Site/*, but we don't want them in the closet model).
+            $excludedPrefixes = ['Wireless/', 'Video/'];
+
+            // Collect hostids of every host belonging to any excluded-prefix
+            // group. One API call per prefix, deduped into a set.
+            $excludedHostids = [];
+            foreach ($excludedPrefixes as $prefix) {
+                try {
+                    $grp = API::HostGroup()->get([
+                        'output'      => ['groupid', 'name'],
+                        'search'      => ['name' => $prefix],
+                        'startSearch' => true
+                    ]) ?: [];
+                    if (empty($grp)) {
+                        continue;
+                    }
+                    $hosts = API::Host()->get([
+                        'output'   => ['hostid'],
+                        'groupids' => array_map(fn($g) => (string) $g['groupid'], $grp)
+                    ]) ?: [];
+                    foreach ($hosts as $h) {
+                        $excludedHostids[(string) $h['hostid']] = true;
+                    }
+                }
+                catch (\Throwable $e) {
+                    $report['errors'][] = "exclude lookup failed for '$prefix*': ".$e->getMessage();
+                }
+            }
+            DebugLog::log('ActionPopulateFromZabbix.excludedHostids', [
+                'count'    => count($excludedHostids),
+                'prefixes' => $excludedPrefixes
+            ]);
+
+            // Cleanup pass: walk every switch we've imported and remove the
+            // ones whose Zabbix host now belongs to an excluded-prefix group.
+            // Closet rows themselves stay — operators may have authored fields
+            // (room, photos, maintenance) under them; only the switch row is
+            // wrong here. Counters on affected closets get recomputed.
+            try {
+                $touchedCloset = [];
+                $rs = \DBselect('SELECT id, closet_uid, zabbix_hostid FROM tcs_closet_switches WHERE zabbix_hostid IS NOT NULL AND zabbix_hostid <> \'\'');
+                while ($r = \DBfetch($rs)) {
+                    $hid = (string) $r['zabbix_hostid'];
+                    if ($hid === '' || !isset($excludedHostids[$hid])) {
+                        continue;
+                    }
+                    \DBexecute('DELETE FROM tcs_closet_switches WHERE id='.(int) $r['id']);
+                    $touchedCloset[(int) $r['closet_uid']] = true;
+                    $report['switchesRemoved']++;
+                }
+                foreach (array_keys($touchedCloset) as $cuid) {
+                    $store->recomputePortCounters($cuid);
+                }
+            }
+            catch (\Throwable $e) {
+                $report['errors'][] = 'cleanup pass failed: '.$e->getMessage();
+            }
 
             $groups = SchoolMapper::fetchZbxGroupsByPrefix('Site/');
             DebugLog::log('ActionPopulateFromZabbix.groups', ['count' => count($groups)]);
-
-            // Non-school Site/* groups that should be skipped on import — and
-            // actively cleaned up if a previous run had already imported them.
-            // Lower-cased comparison so 'Site/Wireless' and 'site/wireless' both match.
-            $excludedSuffixes = ['wireless', 'video'];
-
-            // Cleanup pass: remove any previously-imported schools whose
-            // zbx_group matches an excluded group. Cascade through dependent
-            // rows (closets, switches, power, circuits, maintenance, photos).
-            $existingSchools = $store->listSchools();
-            foreach ($existingSchools as $s) {
-                $zg = (string) ($s['zbx_group'] ?? $s['zbxGroup'] ?? '');
-                if ($zg === '' || !str_starts_with($zg, 'Site/')) {
-                    continue;
-                }
-                $sfx = strtolower(trim(substr($zg, strlen('Site/'))));
-                if (in_array($sfx, $excludedSuffixes, true)) {
-                    try {
-                        $removed = $store->removeSchool((string) $s['id']);
-                        $report['removed'][] = [
-                            'schoolId' => (string) $s['id'],
-                            'zbxGroup' => $zg,
-                            'closets'  => $removed['closets'],
-                            'switches' => $removed['switches']
-                        ];
-                    }
-                    catch (\Throwable $e) {
-                        $report['errors'][] = "cleanup failed for school '".$s['id']."': ".$e->getMessage();
-                    }
-                }
-            }
 
             foreach ($groups as $g) {
                 $groupName = (string) ($g['name']    ?? '');
@@ -107,11 +136,6 @@ class ActionPopulateFromZabbix extends CController {
                     continue;
                 }
 
-                $suffix = strtolower(trim(substr($groupName, strlen('Site/'))));
-                if (in_array($suffix, $excludedSuffixes, true)) {
-                    $report['skipped'][] = $groupName;
-                    continue;
-                }
 
                 $schoolId = SchoolMapper::deriveSchoolIdFromGroup($groupName);
                 if ($schoolId === null) {
@@ -157,6 +181,13 @@ class ActionPopulateFromZabbix extends CController {
                     $visible   = trim((string) ($h['name'] ?? ''));
                     $hostid    = (string) ($h['hostid'] ?? '');
                     if ($hostid === '' || $technical === '') {
+                        continue;
+                    }
+                    // Wireless/* and Video/* hosts share Site/* membership with
+                    // real switches; skip them so APs and cameras don't land
+                    // in the closet inventory.
+                    if (isset($excludedHostids[$hostid])) {
+                        $report['hostsExcluded']++;
                         continue;
                     }
 
