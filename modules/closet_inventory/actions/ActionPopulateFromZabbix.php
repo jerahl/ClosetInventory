@@ -66,40 +66,54 @@ class ActionPopulateFromZabbix extends CController {
                 'errors'           => []
             ];
 
-            // Hosts in any of these top-level group prefixes are excluded from
-            // import (wireless APs and IP-camera infrastructure live alongside
-            // switches in Site/*, but we don't want them in the closet model).
-            $excludedPrefixes = ['Wireless/', 'Video/'];
+            // Hosts in any group whose path contains one of these segments are
+            // excluded from import (wireless APs and IP-camera infrastructure
+            // live under Site/Wireless/... and Site/Video/...). Match both
+            // top-level Wireless/... / Video/... and nested Site/Wireless/...
+            // / Site/Video/... naming. Comparison is case-insensitive on the
+            // suffix; substring compare against /Wireless/ catches every
+            // nesting depth.
+            $excludedSegments = ['/wireless/', '/video/'];
+            $isExcludedGroup = static function (string $name) use ($excludedSegments): bool {
+                $needle = '/' . strtolower($name) . '/';
+                foreach ($excludedSegments as $seg) {
+                    if (strpos($needle, $seg) !== false) return true;
+                }
+                return false;
+            };
 
-            // Collect hostids of every host belonging to any excluded-prefix
-            // group. One API call per prefix, deduped into a set.
+            // Collect hostids of every host in an excluded-segment group. One
+            // API call: fetch all groups (we'll filter client-side because the
+            // search prefix doesn't help with the embedded-segment pattern),
+            // then host.get against the matching groupids.
             $excludedHostids = [];
-            foreach ($excludedPrefixes as $prefix) {
-                try {
-                    $grp = API::HostGroup()->get([
-                        'output'      => ['groupid', 'name'],
-                        'search'      => ['name' => $prefix],
-                        'startSearch' => true
-                    ]) ?: [];
-                    if (empty($grp)) {
-                        continue;
+            try {
+                $allGroups = API::HostGroup()->get([
+                    'output' => ['groupid', 'name']
+                ]) ?: [];
+                $excludedGroupIds = [];
+                foreach ($allGroups as $g) {
+                    if ($isExcludedGroup((string) $g['name'])) {
+                        $excludedGroupIds[] = (string) $g['groupid'];
                     }
+                }
+                if (!empty($excludedGroupIds)) {
                     $hosts = API::Host()->get([
                         'output'   => ['hostid'],
-                        'groupids' => array_map(fn($g) => (string) $g['groupid'], $grp)
+                        'groupids' => $excludedGroupIds
                     ]) ?: [];
                     foreach ($hosts as $h) {
                         $excludedHostids[(string) $h['hostid']] = true;
                     }
                 }
-                catch (\Throwable $e) {
-                    $report['errors'][] = "exclude lookup failed for '$prefix*': ".$e->getMessage();
-                }
+                DebugLog::log('ActionPopulateFromZabbix.excludedHostids', [
+                    'groupCount' => count($excludedGroupIds),
+                    'hostCount'  => count($excludedHostids)
+                ]);
             }
-            DebugLog::log('ActionPopulateFromZabbix.excludedHostids', [
-                'count'    => count($excludedHostids),
-                'prefixes' => $excludedPrefixes
-            ]);
+            catch (\Throwable $e) {
+                $report['errors'][] = 'exclude lookup failed: '.$e->getMessage();
+            }
 
             // Cleanup pass: walk every switch we've imported and remove the
             // ones whose Zabbix host now belongs to an excluded-prefix group.
@@ -136,6 +150,11 @@ class ActionPopulateFromZabbix extends CController {
                     continue;
                 }
 
+                // Skip wireless / video subtrees so 'Site/Wireless/RHS' etc.
+                // doesn't get treated as its own school.
+                if ($isExcludedGroup($groupName)) {
+                    continue;
+                }
 
                 $schoolId = SchoolMapper::deriveSchoolIdFromGroup($groupName);
                 if ($schoolId === null) {
