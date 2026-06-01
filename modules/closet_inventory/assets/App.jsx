@@ -278,6 +278,34 @@ function App() {
     } catch (e) { toast(e.message); }
   };
 
+  // Photo upload — multipart/form-data, bypasses apiPost which assumes a
+  // shallow {key: value} payload. Mobile camera capture is handled in
+  // PhotosPanel by toggling the `capture` attribute on the file input.
+  const uploadPhoto = async (closet, file, label) => {
+    try {
+      const fd = new FormData();
+      fd.append("closetUid", String(closet.uid));
+      fd.append("label", label || "");
+      fd.append("photo", file, file.name);
+      const r = await fetch("zabbix.php?action=closet.photo.upload", {
+        method: "POST", body: fd, credentials: "same-origin"
+      });
+      const body = await r.json().catch(() => null);
+      if (!body || body.ok !== true) throw new Error((body && body.error) || "Upload failed");
+      toast("Photo uploaded.");
+      if (route.uid != null) await loadDetail(route.uid);
+    } catch (e) { toast(e.message); }
+  };
+
+  const deletePhoto = async (closet, p) => {
+    if (!p || !p.id) return;
+    try {
+      await apiPost("closet.photo.delete", { id: p.id });
+      toast("Photo deleted.");
+      if (route.uid != null) await loadDetail(route.uid);
+    } catch (e) { toast(e.message); }
+  };
+
   const refreshCounters = async () => {
     try {
       const body = await apiPost("closet.counters.refresh", {});
@@ -382,6 +410,8 @@ function App() {
                     onDelete: deleteCloset,
                     onMove: (c, sw) => setModal({ kind: "move", closet: c, sw }),
                     onInspect: (c, sw) => setModal({ kind: "inspect", closet: c, sw }),
+                    onUploadPhoto: uploadPhoto,
+                    onDeletePhoto: deletePhoto,
                   }))
               : React.createElement(ListView, {
                   closets, query,

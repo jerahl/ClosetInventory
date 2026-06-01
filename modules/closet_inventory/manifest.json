@@ -58,6 +58,14 @@
             "class": "ActionPhotoUpload",
             "layout": "layout.json"
         },
+        "closet.photo.view": {
+            "class": "ActionPhotoView",
+            "layout": "layout.json"
+        },
+        "closet.photo.delete": {
+            "class": "ActionPhotoDelete",
+            "layout": "layout.json"
+        },
         "closet.seed": {
             "class": "ActionSeed",
             "layout": "layout.json"

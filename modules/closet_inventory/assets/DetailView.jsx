@@ -159,21 +159,107 @@ function PowerPanel({ power, onEdit }) {
   );
 }
 
-function PhotosPanel({ photos, code, onOpenPhoto, onAdd }) {
+function PhotosPanel({ photos, code, onOpenPhoto, onUpload, onDelete }) {
+  // Photos arrive as either an object {id,label,path} (Phase 1+) or a plain
+  // string (legacy seed data). Normalise so render paths are consistent.
+  const items = (photos || []).map((p) => {
+    if (typeof p === "string") return { id: null, label: p, url: null };
+    const id = p.id != null ? +p.id : null;
+    return {
+      id,
+      label: p.label || "",
+      url: id ? ("zabbix.php?action=closet.photo.view&id=" + id) : null
+    };
+  });
+
+  const fileRef = React.useRef(null);
+  const labelRef = React.useRef(null);
+  const [busy, setBusy] = React.useState(false);
+
+  const triggerPicker = (capture) => {
+    if (!fileRef.current) return;
+    if (capture) fileRef.current.setAttribute("capture", "environment");
+    else fileRef.current.removeAttribute("capture");
+    fileRef.current.click();
+  };
+
+  const handleFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = ""; // allow re-picking the same file
+    if (files.length === 0) return;
+    const labelHint = (labelRef.current && labelRef.current.value) || "";
+    setBusy(true);
+    try {
+      for (const file of files) {
+        await onUpload(file, labelHint || file.name.replace(/\.[^.]+$/, ""));
+      }
+      if (labelRef.current) labelRef.current.value = "";
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return React.createElement("div", { className: "panel" },
     React.createElement("div", { className: "panel__head" },
       React.createElement("div", { className: "panel-icon", style: { background: "var(--teal-soft)", color: "var(--teal)" } }, React.createElement(Ic.Photo, null)),
       React.createElement("h3", null, "Photos"),
-      React.createElement("span", { className: "count" }, photos.length)
+      React.createElement("span", { className: "count" }, items.length)
     ),
     React.createElement("div", { className: "panel__body" },
+      // Hidden file input drives both buttons.
+      React.createElement("input", {
+        ref: fileRef,
+        type: "file",
+        accept: "image/*",
+        multiple: true,
+        style: { display: "none" },
+        onChange: handleFiles
+      }),
+
+      // Caption + upload controls.
+      React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" } },
+        React.createElement("input", {
+          ref: labelRef,
+          className: "input",
+          placeholder: "Caption (optional) — e.g. Rack front",
+          style: { flex: "1 1 220px", minWidth: 0 }
+        }),
+        // Camera capture (mobile-first; on desktop it usually falls back to
+        // the file picker).
+        React.createElement("button", {
+          className: "btn btn--primary",
+          disabled: busy,
+          onClick: () => triggerPicker(true),
+          title: "Use the device camera (mobile)"
+        }, React.createElement(Ic.Photo, null), busy ? "Uploading…" : "Take photo"),
+        React.createElement("button", {
+          className: "btn",
+          disabled: busy,
+          onClick: () => triggerPicker(false),
+          title: "Pick existing image(s)"
+        }, React.createElement(Ic.Plus, null), "Choose file")
+      ),
+
       React.createElement("div", { className: "photo-grid" },
-        photos.map((p, i) =>
-          React.createElement("div", { className: "photo", key: i, onClick: () => onOpenPhoto(p) },
-            React.createElement("div", { className: "photo__lbl" }, "▦"),
-            React.createElement("div", { className: "photo__cap" }, p))),
-        React.createElement("div", { className: "photo photo--add", onClick: onAdd },
-          React.createElement(Ic.Plus, null), "Add photo")
+        items.map((p, i) =>
+          React.createElement("div", { className: "photo", key: p.id || ("legacy-" + i), onClick: () => onOpenPhoto(p) },
+            p.url
+              ? React.createElement("img", {
+                  src: p.url,
+                  alt: p.label || code,
+                  loading: "lazy",
+                  style: { width: "100%", height: "100%", objectFit: "cover", display: "block" }
+                })
+              : React.createElement("div", { className: "photo__lbl" }, "▦"),
+            React.createElement("div", { className: "photo__cap" }, p.label || "—"),
+            p.id && onDelete && React.createElement("button", {
+              className: "btn btn--sm",
+              onClick: (e) => { e.stopPropagation(); if (window.confirm("Delete this photo?")) onDelete(p); },
+              title: "Delete photo",
+              style: { position: "absolute", top: 6, right: 6, padding: "2px 6px", background: "rgba(0,0,0,0.55)", color: "#fff", borderColor: "transparent" }
+            }, "×")
+          )),
+        items.length === 0 && React.createElement("div", { className: "muted", style: { padding: 12, fontSize: 13 } }, "No photos yet — take or upload one above.")
       )
     )
   );
@@ -222,7 +308,7 @@ function ProblemsBlock({ problems }) {
   );
 }
 
-function DetailView({ closet, onFlag, onResolve, onEdit, onAddSwitch, onAddMaint, onEditPower, onDelete, onMove, onInspect }) {
+function DetailView({ closet, onFlag, onResolve, onEdit, onAddSwitch, onAddMaint, onEditPower, onDelete, onMove, onInspect, onUploadPhoto, onDeletePhoto }) {
   const c = closet;
   const s = schoolOf(c.schoolId);
   const [photo, setPhoto] = React.useState(null);
@@ -323,13 +409,22 @@ function DetailView({ closet, onFlag, onResolve, onEdit, onAddSwitch, onAddMaint
       // RIGHT
       React.createElement("div", null,
         React.createElement(PowerPanel, { power: c.power, onEdit: () => onEditPower(c) }),
-        React.createElement(PhotosPanel, { photos: c.photos, code: c.code, onOpenPhoto: setPhoto, onAdd: () => onAddMaint && setPhoto(c.photos[0] || "Rack — front") })
+        React.createElement(PhotosPanel, {
+          photos: c.photos, code: c.code,
+          onOpenPhoto: setPhoto,
+          onUpload: onUploadPhoto ? (file, label) => onUploadPhoto(c, file, label) : null,
+          onDelete: onDeletePhoto ? (p) => onDeletePhoto(c, p) : null
+        })
       )
     ),
 
     photo && React.createElement("div", { className: "lightbox", onClick: () => setPhoto(null) },
-      React.createElement("div", { className: "lightbox__frame" },
-        React.createElement("span", null, `${c.code} — ${photo}`))
+      React.createElement("div", { className: "lightbox__frame", onClick: (e) => e.stopPropagation() },
+        photo.url
+          ? React.createElement("img", { src: photo.url, alt: photo.label || c.code, style: { maxWidth: "90vw", maxHeight: "85vh", display: "block" } })
+          : React.createElement("div", { style: { padding: 24, color: "var(--muted)" } }, "(no image)"),
+        React.createElement("div", { style: { marginTop: 10, color: "#fff", textAlign: "center", fontSize: 13 } }, `${c.code} — ${photo.label || ""}`)
+      )
     )
   );
 }
