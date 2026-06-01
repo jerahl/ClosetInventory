@@ -1,0 +1,58 @@
+{
+    "manifest_version": 2.0,
+    "id": "closet_inventory",
+    "name": "Closet Inventory",
+    "version": "0.1.0",
+    "namespace": "ClosetInventory",
+    "description": "Switch closet (MDF/IDF) inventory for TCS — authored CRUD (Phase 1).",
+    "author": "TCS Network",
+    "url": "",
+    "actions": {
+        "closet.list": {
+            "class": "ActionClosetList",
+            "view": "closet.list.view",
+            "layout": "layout.htmlpage"
+        },
+        "closet.view": {
+            "class": "ActionClosetView",
+            "view": "closet.view.view",
+            "layout": "layout.htmlpage"
+        },
+        "closet.list.data": {
+            "class": "ActionClosetListData",
+            "layout": "layout.json"
+        },
+        "closet.view.data": {
+            "class": "ActionClosetViewData",
+            "layout": "layout.json"
+        },
+        "closet.save": {
+            "class": "ActionClosetSave",
+            "layout": "layout.json"
+        },
+        "closet.switch.save": {
+            "class": "ActionSwitchSave",
+            "layout": "layout.json"
+        },
+        "closet.power.save": {
+            "class": "ActionPowerSave",
+            "layout": "layout.json"
+        },
+        "closet.maintenance.save": {
+            "class": "ActionMaintenanceSave",
+            "layout": "layout.json"
+        },
+        "closet.flag.save": {
+            "class": "ActionFlagSave",
+            "layout": "layout.json"
+        },
+        "closet.photo.upload": {
+            "class": "ActionPhotoUpload",
+            "layout": "layout.json"
+        },
+        "closet.seed": {
+            "class": "ActionSeed",
+            "layout": "layout.json"
+        }
+    }
+}
