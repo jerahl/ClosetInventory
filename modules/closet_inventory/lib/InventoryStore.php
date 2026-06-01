@@ -486,6 +486,23 @@ class InventoryStore {
         ]]);
     }
 
+    /**
+     * Write Zabbix-enriched port counters back to the closet row. Used by
+     * ActionCountersRefresh so the list view's cached ports_total /
+     * ports_used reflect live state without forcing every list render to
+     * fan out to Zabbix.
+     */
+    public function updateCounters(int $uid, int $total, int $used): void {
+        DB::update('tcs_closet_closets', [[
+            'values' => [
+                'ports_total' => $total,
+                'ports_used'  => $used,
+                'updated_at'  => date('Y-m-d H:i:s')
+            ],
+            'where' => ['uid' => $uid]
+        ]]);
+    }
+
     private function touchUpdatedAt(int $closetUid): void {
         DB::update('tcs_closet_closets', [[
             'values' => ['updated_at' => date('Y-m-d H:i:s')],

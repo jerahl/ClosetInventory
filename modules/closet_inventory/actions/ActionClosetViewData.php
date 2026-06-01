@@ -3,6 +3,7 @@
 namespace Modules\ClosetInventory\Actions;
 
 use CControllerResponseData;
+use Modules\ClosetInventory\Lib\EnrichmentService;
 use Modules\ClosetInventory\Lib\InventoryStore;
 
 /**
@@ -40,6 +41,22 @@ class ActionClosetViewData extends ActionDataBase {
                     'main_block' => json_encode(['error' => 'not_found'])
                 ]));
                 return;
+            }
+            // Enrichment must never fail the response. If the Zabbix API
+            // round-trips throw, we fall back to the authored record and
+            // mark the source as "down" so the React UI can surface a chip.
+            try {
+                $closet = (new EnrichmentService())->enrich($closet);
+            }
+            catch (\Throwable $e) {
+                if (function_exists('error')) {
+                    error('closet_inventory: enrich failed for uid='.$uid.': '.$e->getMessage());
+                }
+                $live = isset($closet['_live']) && is_array($closet['_live']) ? $closet['_live'] : [];
+                $sources = isset($live['sources']) && is_array($live['sources']) ? $live['sources'] : [];
+                $sources['zabbix'] = 'down';
+                $live['sources']   = $sources;
+                $closet['_live']   = $live;
             }
             $payload = ['closet' => $closet];
         }

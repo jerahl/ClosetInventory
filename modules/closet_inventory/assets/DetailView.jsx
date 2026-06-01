@@ -1,14 +1,38 @@
 /* Closet detail view. */
 
-function SwitchRow({ s }) {
+function SwitchRow({ s, zabbixSource }) {
   const pct = Math.round((s.used / s.ports) * 100);
+  const hasHost = s.zabbixHostid != null && s.zabbixHostid !== "";
+  // Live chip logic: drop the "pending" chip entirely once the closet is
+  // pulling live Zabbix data for this switch. Show distinct chips for
+  // "not mapped" (authored field missing) and "Zabbix unreachable" (mapped
+  // but the snapshot failed) so operators can tell the cases apart.
+  let liveChip = null;
+  if (!hasHost) {
+    liveChip = React.createElement("span", {
+      className: "uplink-tag",
+      title: "Map this switch to a Zabbix host id to enable live data.",
+      style: { background: "var(--surface-2)", color: "var(--muted)", borderColor: "var(--border)" }
+    }, "Live data: not mapped to a Zabbix host");
+  } else if (zabbixSource === "down") {
+    liveChip = React.createElement("span", {
+      className: "uplink-tag",
+      title: "The Zabbix Item API didn't respond; values shown are the last authored ones.",
+      style: { background: "var(--amber-soft)", color: "var(--amber)", borderColor: "color-mix(in oklch, var(--amber) 25%, transparent)" }
+    }, "Zabbix unreachable — showing authored values");
+  }
   return React.createElement("div", { className: "swrow" },
     React.createElement("div", { className: "swrow__icon" }, React.createElement(Ic.Switch, null)),
     React.createElement("div", { className: "swrow__main" },
       React.createElement("div", { className: "swrow__name" }, s.name,
         s.stack > 1 && React.createElement("span", { className: "uplink-tag", style: { background: "var(--violet-soft)", color: "var(--violet)", borderColor: "color-mix(in oklch, var(--violet) 25%, transparent)" } }, `Stack ×${s.stack}`),
         s.poe && React.createElement("span", { className: "uplink-tag" }, "PoE+"),
-        React.createElement("span", { className: "uplink-tag", title: "Zabbix/XIQ/rConfig enrichment lands in Phase 2", style: { background: "var(--surface-2)", color: "var(--muted)", borderColor: "var(--border)" } }, "Live data: pending (Phase 2)")
+        s.poeStatus && React.createElement("span", {
+          className: "uplink-tag",
+          title: "Live PoE status from Zabbix",
+          style: { background: "var(--teal-soft)", color: "var(--teal)", borderColor: "color-mix(in oklch, var(--teal) 25%, transparent)" }
+        }, s.poeStatus),
+        liveChip
       ),
       React.createElement("div", { className: "swrow__model" }, `${s.vendor} ${s.model}`),
       React.createElement("div", { className: "swrow__specs" },
@@ -107,6 +131,49 @@ function PhotosPanel({ photos, code, onOpenPhoto, onAdd }) {
   );
 }
 
+/* Compact Zabbix-problems list. Visual only — no actions. Severity colors
+   mirror the dashboard's standard palette (0–1 info, 2 warning, 3 average,
+   4 high, 5 disaster). */
+function ProblemsBlock({ problems }) {
+  if (!problems || problems.length === 0) return null;
+  const SEV = [
+    { c: "var(--muted)",   name: "Info" },
+    { c: "var(--muted)",   name: "Info" },
+    { c: "var(--amber)",   name: "Warning" },
+    { c: "var(--amber)",   name: "Average" },
+    { c: "var(--rose)",    name: "High" },
+    { c: "var(--rose)",    name: "Disaster" }
+  ];
+  const top = problems.slice(0, 3);
+  const more = problems.length - top.length;
+  const rel = (clock) => {
+    if (!clock) return "";
+    const diff = Math.max(0, Math.floor(Date.now() / 1000) - clock);
+    if (diff < 60)    return diff + "s";
+    if (diff < 3600)  return Math.floor(diff / 60) + "m";
+    if (diff < 86400) return Math.floor(diff / 3600) + "h";
+    return Math.floor(diff / 86400) + "d";
+  };
+  return React.createElement("div", { className: "panel" },
+    React.createElement("div", { className: "panel__head" },
+      React.createElement("div", { className: "panel-icon", style: { background: "var(--amber-soft)", color: "var(--amber)" } }, React.createElement(Ic.Alert, null)),
+      React.createElement("h3", null, "Active problems"),
+      React.createElement("span", { className: "count" }, problems.length)
+    ),
+    React.createElement("div", { className: "panel__body" },
+      top.map((p, i) => {
+        const sev = SEV[Math.max(0, Math.min(5, p.severity | 0))];
+        return React.createElement("div", { key: p.eventid || i, style: { display: "flex", gap: 10, alignItems: "center", padding: "6px 0", fontSize: 13, borderBottom: i < top.length - 1 ? "1px solid var(--border)" : "none" } },
+          React.createElement("span", { title: sev.name, style: { width: 8, height: 8, borderRadius: "50%", background: sev.c, flex: "0 0 auto" } }),
+          React.createElement("span", { style: { flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, p.name || "(unnamed problem)"),
+          React.createElement("span", { className: "muted", style: { fontSize: 11, fontFamily: "var(--mono, monospace)" } }, rel(p.clock))
+        );
+      }),
+      more > 0 && React.createElement("div", { className: "muted", style: { fontSize: 12, marginTop: 6 } }, "+" + more + " more")
+    )
+  );
+}
+
 function DetailView({ closet, onFlag, onResolve, onEdit, onAddSwitch, onAddMaint, onEditPower }) {
   const c = closet;
   const s = schoolOf(c.schoolId);
@@ -163,9 +230,10 @@ function DetailView({ closet, onFlag, onResolve, onEdit, onAddSwitch, onAddMaint
             React.createElement("button", { className: "btn btn--sm panel-act", onClick: () => onAddSwitch(c) }, React.createElement(Ic.Plus, null), "Add")
           ),
           React.createElement("div", { className: "panel__body panel__body--flush" },
-            c.switches.map((sw, i) => React.createElement(SwitchRow, { key: i, s: sw }))
+            c.switches.map((sw, i) => React.createElement(SwitchRow, { key: i, s: sw, zabbixSource: (c._live && c._live.sources && c._live.sources.zabbix) || null }))
           )
         ),
+        React.createElement(ProblemsBlock, { problems: (c._live && Array.isArray(c._live.problems)) ? c._live.problems : [] }),
         React.createElement("div", { className: "panel" },
           React.createElement("div", { className: "panel__head" },
             React.createElement("div", { className: "panel-icon", style: { background: "var(--surface-2)", color: "var(--text-2)", border: "1px solid var(--border)" } }, React.createElement(Ic.Wrench, null)),
@@ -204,4 +272,4 @@ function DetailView({ closet, onFlag, onResolve, onEdit, onAddSwitch, onAddMaint
   );
 }
 
-Object.assign(window, { DetailView, SwitchRow, PowerPanel, PhotosPanel });
+Object.assign(window, { DetailView, SwitchRow, PowerPanel, PhotosPanel, ProblemsBlock });

@@ -43,7 +43,7 @@ function SortHead({ label, col, sort, setSort, alignRight }) {
   );
 }
 
-function ListView({ closets, query, onOpen, onAddCloset, onFlag }) {
+function ListView({ closets, query, onOpen, onAddCloset, onFlag, onRefreshCounters, isAdmin }) {
   const [school, setSchool] = React.useState("all");
   const [type, setType] = React.useState("all");
   const [flaggedOnly, setFlaggedOnly] = React.useState(false);
@@ -92,6 +92,11 @@ function ListView({ closets, query, onOpen, onAddCloset, onFlag }) {
       ),
       React.createElement("div", { className: "page-head__actions" },
         React.createElement("button", { className: "btn" }, React.createElement(Ic.Download, null), "Export"),
+        isAdmin && React.createElement("button", {
+          className: "btn",
+          title: "Re-run Zabbix enrichment for every closet and write the new port counts back to the cached columns.",
+          onClick: onRefreshCounters
+        }, React.createElement(Ic.Network, null), "Refresh counters"),
         React.createElement("button", { className: "btn btn--primary", onClick: onAddCloset }, React.createElement(Ic.Plus, null), "Add closet")
       )
     ),

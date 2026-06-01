@@ -225,6 +225,14 @@ function App() {
     } catch (e) { toast(e.message); }
   };
 
+  const refreshCounters = async () => {
+    try {
+      const body = await apiPost("closet.counters.refresh", {});
+      toast(`Counters refreshed for ${body.updated || 0} closet${body.updated === 1 ? "" : "s"}.`);
+      await loadList();
+    } catch (e) { toast(e.message); }
+  };
+
   const flaggedCount = closets.filter((c) => c.flagged).length;
 
   return React.createElement("div", { className: "app" + (navOpen ? " nav-open" : "") },
@@ -304,6 +312,8 @@ function App() {
                   onOpen: openCloset,
                   onAddCloset: () => setModal({ kind: "add" }),
                   onFlag: (c) => setModal({ kind: "flag", closet: c }),
+                  onRefreshCounters: refreshCounters,
+                  isAdmin: !!BOOT.isAdmin,
                 })
       )
     ),

@@ -53,6 +53,10 @@
         "closet.seed": {
             "class": "ActionSeed",
             "layout": "layout.json"
+        },
+        "closet.counters.refresh": {
+            "class": "ActionCountersRefresh",
+            "layout": "layout.json"
         }
     }
 }
