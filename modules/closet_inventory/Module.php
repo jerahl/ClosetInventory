@@ -23,9 +23,20 @@ class Module extends CModule {
     private const SCHEMA_TARGET = 1;
 
     public function init(): void {
+        $actions = [];
+        try {
+            $m = $this->getManifest();
+            $actions = is_array($m) ? array_keys($m['actions'] ?? []) : [];
+        }
+        catch (\Throwable $e) {
+            $actions = ['ERR:'.$e->getMessage()];
+        }
+
         DebugLog::log('Module.init.enter', [
-            'phpVersion' => PHP_VERSION,
-            'manifest'   => __DIR__ . '/manifest.json',
+            'phpVersion'        => PHP_VERSION,
+            'manifest'          => __DIR__ . '/manifest.json',
+            'registeredActions' => $actions,
+            'baseClass'         => parent::class,
         ]);
 
         try {
