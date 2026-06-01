@@ -516,25 +516,57 @@ class InventoryStore {
         if ($id === '') {
             return ['id' => '', 'created' => false];
         }
-        $existing = \DBfetch(\DBselect(
-            'SELECT id, zbx_group FROM tcs_closet_schools WHERE id='.\zbx_dbstr($id)
-        ));
-        if ($existing !== false && $existing !== null) {
-            $newGroup = isset($payload['zbxGroup']) ? (string) $payload['zbxGroup'] : null;
-            if ($newGroup !== null && $newGroup !== '' && (string) ($existing['zbx_group'] ?? '') !== $newGroup) {
-                $this->dbUpdate('tcs_closet_schools', ['zbx_group' => $newGroup], ['id' => $id]);
+
+        // 1) Identity first: if a school already maps to this zbx_group, reuse
+        //    its row regardless of the caller's derived id. This is what
+        //    prevents two different schools whose names slug to the same id
+        //    (e.g. "Northridge High" and "New Heights" both → "NH") from
+        //    clobbering each other on re-runs.
+        $newGroup = isset($payload['zbxGroup']) ? (string) $payload['zbxGroup'] : '';
+        if ($newGroup !== '') {
+            $byGroup = \DBfetch(\DBselect(
+                'SELECT id FROM tcs_closet_schools WHERE zbx_group='.\zbx_dbstr($newGroup)
+            ));
+            if ($byGroup !== false && $byGroup !== null) {
+                return ['id' => (string) $byGroup['id'], 'created' => false];
             }
-            return ['id' => $id, 'created' => false];
         }
 
+        // 2) Otherwise resolve a free id starting from the caller's derived
+        //    value. If that id is taken by a DIFFERENT zbx_group, append a
+        //    numeric suffix (NH → NH2 → NH3 …) until unique.
+        $finalId = $this->resolveAvailableSchoolId($id);
+
         $this->dbInsert('tcs_closet_schools', [
-            'id'        => $id,
-            'name'      => (string) ($payload['name'] ?? $id),
+            'id'        => $finalId,
+            'name'      => (string) ($payload['name'] ?? $finalId),
             'type'      => (string) ($payload['type'] ?? 'Elem'),
-            'zbx_group' => isset($payload['zbxGroup']) ? (string) $payload['zbxGroup'] : null,
+            'zbx_group' => $newGroup !== '' ? $newGroup : null,
             'color_hue' => isset($payload['colorHue']) ? (int) $payload['colorHue'] : null
         ]);
-        return ['id' => $id, 'created' => true];
+        return ['id' => $finalId, 'created' => true];
+    }
+
+    /**
+     * Walk id, id.'2', id.'3', … until we find one not already taken.
+     */
+    private function resolveAvailableSchoolId(string $base): string {
+        $candidate = $base;
+        $n = 2;
+        while (true) {
+            $row = \DBfetch(\DBselect(
+                'SELECT id FROM tcs_closet_schools WHERE id='.\zbx_dbstr($candidate)
+            ));
+            if ($row === false || $row === null) {
+                return $candidate;
+            }
+            $candidate = $base . $n;
+            $n++;
+            if ($n > 99) {
+                // Cosmic-ray defence: stop the loop rather than spin forever.
+                return $base . substr((string) crc32($base . microtime(true)), 0, 4);
+            }
+        }
     }
 
     /**
