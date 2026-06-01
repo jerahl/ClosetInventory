@@ -15,8 +15,7 @@ use CCsrfTokenHelper;
 abstract class ActionBase extends CController {
 
     protected function checkPermissions(): bool {
-        return CWebUser::isLoggedIn()
-            && $this->getUserType() >= USER_TYPE_ZABBIX_USER;
+        return CWebUser::isLoggedIn();
     }
 
     /**
