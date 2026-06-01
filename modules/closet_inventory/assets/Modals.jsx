@@ -46,7 +46,7 @@ function ClosetFormModal({ closet, onClose, onSave }) {
 
 function FlagModal({ closet, onClose, onSave }) {
   const [reason, setReason] = React.useState("");
-  const [tech, setTech] = React.useState("J. Whitfield");
+  const tech = (window.CLOSET_BOOT && window.CLOSET_BOOT.userName) || "";
   const presets = [
     "UPS battery health degraded — schedule replacement.",
     "Port capacity exhausted — needs additional access switch.",
@@ -69,8 +69,7 @@ function FlagModal({ closet, onClose, onSave }) {
     React.createElement("div", { style: { display: "flex", gap: 7, flexWrap: "wrap", margin: "-6px 0 16px" } },
       presets.map((p, i) => React.createElement("button", { key: i, className: "chip", style: { height: 28, fontSize: 11.5, fontWeight: 500 }, onClick: () => setReason(p) }, p.split(" ").slice(0, 3).join(" ") + "\u2026"))),
     React.createElement(Field, { label: "Raised by" },
-      React.createElement("select", { value: tech, onChange: (e) => setTech(e.target.value) },
-        ["J. Whitfield", "M. Alvarez", "D. Carter", "S. Nguyen", "R. Patel", "T. Brooks"].map((t) => React.createElement("option", { key: t }, t))))
+      React.createElement("input", { className: "input mono", disabled: true, value: tech || "(unknown user)", style: { color: "var(--muted)", background: "var(--surface-2)" } }))
   );
 }
 
@@ -326,7 +325,8 @@ function SwitchFormModal({ closet, onClose, onSave }) {
 function MaintFormModal({ closet, onClose, onSave }) {
   const types = ["Quarterly inspection", "Switch replacement", "IOS / firmware upgrade", "UPS battery service", "Patch / cable cleanup", "Added access switch", "Cooling / thermal check", "Uplink fiber repair"];
   const toneOf = (t) => /UPS|replacement|fiber/.test(t) ? "amber" : /upgrade|thermal|Cooling/.test(t) ? "teal" : "default";
-  const [f, setF] = React.useState({ type: types[0], date: "2026-05-28", tech: "J. Whitfield", notes: "" });
+  const defaultTech = (window.CLOSET_BOOT && window.CLOSET_BOOT.userName) || "J. Whitfield";
+  const [f, setF] = React.useState({ type: types[0], date: new Date().toISOString().slice(0, 10), tech: defaultTech, notes: "" });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   return React.createElement(Modal, {
     title: "Log maintenance entry",
