@@ -31,7 +31,7 @@ async function apiPost(action, fields) {
 }
 
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
-  "dark": false,
+  "dark": true,
   "accent": "Blue",
   "density": "regular"
 }/*EDITMODE-END*/;
