@@ -47,6 +47,29 @@ final class Config {
     }
 
     /**
+     * Resolve the rConfig base URL from {$RCONFIG.URL}. Returns null when
+     * the macro is unset or empty. Does not validate https:// here — the
+     * RConfigClient constructor rejects non-https URLs.
+     */
+    public static function rconfigUrl(): ?string {
+        $val = self::macro('{$RCONFIG.URL}');
+        if ($val === null) return null;
+        $val = trim($val);
+        return $val === '' ? null : $val;
+    }
+
+    /**
+     * Resolve the rConfig API token from {$RCONFIG.TOKEN}. Returns null
+     * when the macro is unset or empty.
+     */
+    public static function rconfigToken(): ?string {
+        $val = self::macro('{$RCONFIG.TOKEN}');
+        if ($val === null) return null;
+        $val = trim($val);
+        return $val === '' ? null : $val;
+    }
+
+    /**
      * Resolve a single global user macro by exact name (including the curly
      * `{$NAME}` wrapper). Returns null when missing. Cached for self::TTL.
      */

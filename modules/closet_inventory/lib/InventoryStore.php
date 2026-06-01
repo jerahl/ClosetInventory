@@ -467,6 +467,184 @@ class InventoryStore {
     }
 
     /**
+     * Insert-only school upsert for the bulk importer. New rows get the full
+     * payload; existing rows only have `zbx_group` refreshed (so a renamed
+     * Zabbix group lights up here without clobbering operator-edited name /
+     * type / color_hue). Never deletes.
+     *
+     * @param array<string, mixed> $payload  expects name, type, zbxGroup, colorHue
+     * @return array{id:string, created:bool}
+     */
+    public function upsertSchool(string $id, array $payload): array {
+        $id = trim($id);
+        if ($id === '') {
+            return ['id' => '', 'created' => false];
+        }
+        $existing = \DBfetch(\DBselect(
+            'SELECT id, zbx_group FROM tcs_closet_schools WHERE id='.\zbx_dbstr($id)
+        ));
+        if ($existing !== false && $existing !== null) {
+            $newGroup = isset($payload['zbxGroup']) ? (string) $payload['zbxGroup'] : null;
+            if ($newGroup !== null && $newGroup !== '' && (string) ($existing['zbx_group'] ?? '') !== $newGroup) {
+                DB::update('tcs_closet_schools', [[
+                    'values' => ['zbx_group' => $newGroup],
+                    'where'  => ['id' => $id]
+                ]]);
+            }
+            return ['id' => $id, 'created' => false];
+        }
+
+        DB::insert('tcs_closet_schools', [[
+            'id'        => $id,
+            'name'      => (string) ($payload['name'] ?? $id),
+            'type'      => (string) ($payload['type'] ?? 'Elem'),
+            'zbx_group' => isset($payload['zbxGroup']) ? (string) $payload['zbxGroup'] : null,
+            'color_hue' => isset($payload['colorHue']) ? (int) $payload['colorHue'] : null
+        ]], false);
+        return ['id' => $id, 'created' => true];
+    }
+
+    /**
+     * Idempotent closet upsert keyed on `code`. Inserts a new row when missing;
+     * for an existing row, only sets the non-null fields supplied in $payload
+     * (so authored-only fields like flagged / flag_reason / counters stay
+     * untouched). Never deletes.
+     *
+     * @param array<string, mixed> $payload  may include type, schoolId, building, floor, room
+     * @return array{uid:int, created:bool}
+     */
+    public function upsertCloset(string $code, array $payload): array {
+        $code = trim($code);
+        if ($code === '') {
+            return ['uid' => 0, 'created' => false];
+        }
+        $row = \DBfetch(\DBselect(
+            'SELECT uid FROM tcs_closet_closets WHERE code='.\zbx_dbstr($code)
+        ));
+        $now = date('Y-m-d H:i:s');
+
+        if ($row !== false && $row !== null) {
+            $uid = (int) $row['uid'];
+            $updates = [];
+            $map = [
+                'type'      => 'type',
+                'schoolId'  => 'school_id',
+                'building'  => 'building',
+                'floor'     => 'floor',
+                'room'      => 'room'
+            ];
+            foreach ($map as $in => $col) {
+                if (array_key_exists($in, $payload) && $payload[$in] !== null && $payload[$in] !== '') {
+                    $updates[$col] = $in === 'floor' ? (int) $payload[$in] : (string) $payload[$in];
+                }
+            }
+            if ($updates !== []) {
+                $updates['updated_at'] = $now;
+                DB::update('tcs_closet_closets', [[
+                    'values' => $updates,
+                    'where'  => ['uid' => $uid]
+                ]]);
+            }
+            return ['uid' => $uid, 'created' => false];
+        }
+
+        $fields = [
+            'code'       => $code,
+            'type'       => (string) ($payload['type']     ?? 'IDF'),
+            'school_id'  => (string) ($payload['schoolId'] ?? ''),
+            'building'   => isset($payload['building']) ? (string) $payload['building'] : null,
+            'floor'      => isset($payload['floor'])    ? (int)    $payload['floor']    : null,
+            'room'       => isset($payload['room'])     ? (string) $payload['room']     : null,
+            'updated_at' => $now
+        ];
+        $ids = DB::insert('tcs_closet_closets', [$fields], true);
+        return ['uid' => (int) ($ids[0] ?? 0), 'created' => true];
+    }
+
+    /**
+     * Idempotent switch upsert keyed on `(closet_uid, name)`. Inserts a new row
+     * when missing; for an existing row only sets the non-null fields supplied
+     * in $payload — specifically used by the bulk importer to attach
+     * `zabbix_hostid` and `mgmt_ip` to switches that were authored by hand.
+     * Never deletes.
+     *
+     * @param array<string, mixed> $payload
+     * @return array{id:int, created:bool}
+     */
+    public function upsertSwitch(int $closetUid, string $name, array $payload): array {
+        $name = trim($name);
+        if ($closetUid <= 0 || $name === '') {
+            return ['id' => 0, 'created' => false];
+        }
+        $row = \DBfetch(\DBselect(
+            'SELECT id FROM tcs_closet_switches WHERE closet_uid='.$closetUid
+            .' AND name='.\zbx_dbstr($name)
+        ));
+        if ($row !== false && $row !== null) {
+            $id = (int) $row['id'];
+            $updates = [];
+            $map = [
+                'vendor'          => 'vendor',
+                'model'           => 'model',
+                'ports'           => 'ports',
+                'poe'             => 'poe',
+                'uplinks'         => 'uplinks',
+                'uplinkSpeed'     => 'uplink_speed',
+                'mgmtIp'          => 'mgmt_ip',
+                'serial'          => 'serial',
+                'stack'           => 'stack_size',
+                'zabbixHostid'    => 'zabbix_hostid',
+                'xiqDeviceId'     => 'xiq_device_id',
+                'rconfigDeviceId' => 'rconfig_device_id'
+            ];
+            foreach ($map as $in => $col) {
+                if (!array_key_exists($in, $payload)) continue;
+                $v = $payload[$in];
+                if ($v === null || $v === '') continue;
+                if ($in === 'poe')             { $updates[$col] = $v ? 1 : 0; }
+                elseif ($in === 'ports'
+                     || $in === 'uplinks'
+                     || $in === 'stack'
+                     || $in === 'xiqDeviceId'
+                     || $in === 'rconfigDeviceId') {
+                    $updates[$col] = (int) $v;
+                }
+                else { $updates[$col] = (string) $v; }
+            }
+            if ($updates !== []) {
+                DB::update('tcs_closet_switches', [[
+                    'values' => $updates,
+                    'where'  => ['id' => $id]
+                ]]);
+                $this->touchUpdatedAt($closetUid);
+            }
+            return ['id' => $id, 'created' => false];
+        }
+
+        $fields = [
+            'closet_uid'        => $closetUid,
+            'name'              => $name,
+            'vendor'            => (string) ($payload['vendor'] ?? ''),
+            'model'             => (string) ($payload['model']  ?? ''),
+            'ports'             => (int)    ($payload['ports']  ?? 0),
+            'used'              => 0,
+            'poe'               => !empty($payload['poe']) ? 1 : 0,
+            'uplinks'           => (int)    ($payload['uplinks'] ?? 0),
+            'uplink_speed'      => (string) ($payload['uplinkSpeed'] ?? ''),
+            'mgmt_ip'           => (string) ($payload['mgmtIp']  ?? ''),
+            'serial'            => (string) ($payload['serial']  ?? ''),
+            'stack_size'        => (int)    ($payload['stack']   ?? 1),
+            'zabbix_hostid'     => (isset($payload['zabbixHostid']) && $payload['zabbixHostid'] !== '' && $payload['zabbixHostid'] !== null) ? (string) $payload['zabbixHostid'] : null,
+            'xiq_device_id'     => (isset($payload['xiqDeviceId'])     && (int) $payload['xiqDeviceId']     > 0) ? (int) $payload['xiqDeviceId']     : null,
+            'rconfig_device_id' => (isset($payload['rconfigDeviceId']) && (int) $payload['rconfigDeviceId'] > 0) ? (int) $payload['rconfigDeviceId'] : null
+        ];
+        $ids = DB::insert('tcs_closet_switches', [$fields], true);
+        $newId = (int) ($ids[0] ?? 0);
+        $this->recomputePortCounters($closetUid);
+        return ['id' => $newId, 'created' => true];
+    }
+
+    /**
      * Recompute ports_total/ports_used by summing the switches table. The
      * list view reads these straight off the closet row so we don't fan
      * out per closet.

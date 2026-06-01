@@ -65,6 +65,18 @@
         "closet.xiq.device.data": {
             "class": "ActionXiqDeviceData",
             "layout": "layout.json"
+        },
+        "closet.zabbix.host.data": {
+            "class": "ActionZabbixHostData",
+            "layout": "layout.json"
+        },
+        "closet.rconfig.device.data": {
+            "class": "ActionRConfigDeviceData",
+            "layout": "layout.json"
+        },
+        "closet.populate.zabbix": {
+            "class": "ActionPopulateFromZabbix",
+            "layout": "layout.json"
         }
     }
 }

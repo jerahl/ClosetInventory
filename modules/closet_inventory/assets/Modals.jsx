@@ -82,76 +82,176 @@ function SwitchFormModal({ closet, onClose, onSave }) {
   const [f, setF] = React.useState({
     name: `${closet.schoolId}-${closet.type}-SW${closet.switches.length + 1}`,
     model: models[0], ports: 48, used: 0, uplinks: 1, uplinkSpeed: "10G SFP+", mgmtIp: "", serial: "", stack: 1, poe: true,
-    xiqDeviceId: "", zabbixHostid: "",
+    xiqDeviceId: "", zabbixHostid: "", rconfigDeviceId: "",
   });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
 
-  // Lookup section state.
+  // Lookup section state — three chips, one per source.
   const [lookup, setLookup] = React.useState("");
-  const [hint, setHint]     = React.useState(null); // { kind: "ok"|"warn"|"err", text }
+  const [chips, setChips]   = React.useState(null); // { zabbix:{kind,text}, xiq:{kind,text}, rconfig:{kind,text} }
   const [busy, setBusy]     = React.useState(false);
+
+  const CHIP_STYLES = {
+    ok:           { background: "var(--teal-soft)",  color: "var(--teal)",  borderColor: "color-mix(in oklch, var(--teal) 25%, transparent)" },
+    not_found:    { background: "var(--surface-2)",  color: "var(--muted)", borderColor: "var(--border)" },
+    unconfigured: { background: "var(--surface-2)",  color: "var(--muted)", borderColor: "var(--border)" },
+    rate_limited: { background: "var(--amber-soft)", color: "var(--amber)", borderColor: "color-mix(in oklch, var(--amber) 25%, transparent)" },
+    ambiguous:    { background: "var(--amber-soft)", color: "var(--amber)", borderColor: "color-mix(in oklch, var(--amber) 25%, transparent)" },
+    down:         { background: "var(--surface-2)",  color: "var(--red, #c44)", borderColor: "color-mix(in oklch, var(--red, #c44) 25%, transparent)" },
+    err:          { background: "var(--surface-2)",  color: "var(--red, #c44)", borderColor: "color-mix(in oklch, var(--red, #c44) 25%, transparent)" }
+  };
 
   const doFind = async () => {
     const q = lookup.trim();
-    const idTyped = f.xiqDeviceId && +f.xiqDeviceId > 0 ? +f.xiqDeviceId : 0;
-    if (!q && !idTyped) { setHint({ kind: "warn", text: "Enter a hostname, MAC, serial, or XIQ device id first." }); return; }
-    if (!window.apiGet) { setHint({ kind: "err", text: "Lookup not yet ready — try again in a moment." }); return; }
-
-    // Build query: prefer explicit XIQ id when present; otherwise classify the
-    // free-text input. A 12+ hex run (with/without separators) is a MAC; a
-    // pure integer is an id; everything else is treated as hostname, with a
-    // serial fallback on no match.
-    let params = null;
-    if (idTyped > 0) {
-      params = { id: idTyped };
-    } else if (/^\d+$/.test(q)) {
-      params = { id: +q };
-    } else if (/^[0-9A-Fa-f:.\-]{12,}$/.test(q) && (q.replace(/[^0-9A-Fa-f]/g, "").length === 12)) {
-      params = { mac: q };
-    } else {
-      params = { hostname: q };
+    const xiqTyped = f.xiqDeviceId && +f.xiqDeviceId > 0 ? +f.xiqDeviceId : 0;
+    const zbxTyped = f.zabbixHostid && +f.zabbixHostid > 0 ? +f.zabbixHostid : 0;
+    if (!q && !xiqTyped && !zbxTyped) {
+      setChips({ zabbix: { kind: "err", text: "Enter a hostname, IP, MAC, serial, or numeric id first." } });
+      return;
+    }
+    if (!window.apiGet) {
+      setChips({ zabbix: { kind: "err", text: "Lookup not yet ready — try again." } });
+      return;
     }
 
     setBusy(true);
-    setHint(null);
+    const localChips = { zabbix: null, xiq: null, rconfig: null };
+    const updates = {}; // gathered field updates, applied once at the end.
+
+    // Classify the free-text input.
+    const looksLikeIp   = /^\d{1,3}(\.\d{1,3}){3}$/.test(q);
+    const looksLikeInt  = /^\d+$/.test(q);
+    const looksLikeMac  = /^[0-9A-Fa-f:.\-]{12,}$/.test(q) && (q.replace(/[^0-9A-Fa-f]/g, "").length === 12);
+
+    // ---------- 1) Zabbix ----------
+    let zbxHost = null;
     try {
-      let body = await window.apiGet("closet.xiq.device.data", params);
-      // If hostname search came up empty, try serial as a fallback.
-      if (body && body.ok && !body.device && params.hostname) {
-        body = await window.apiGet("closet.xiq.device.data", { serial: q });
+      let zbxParams = null;
+      if (zbxTyped > 0) zbxParams = { hostid: String(zbxTyped) };
+      else if (looksLikeIp) zbxParams = { ip: q };
+      else if (q && !looksLikeMac) zbxParams = { hostname: q };
+
+      if (zbxParams) {
+        const body = await window.apiGet("closet.zabbix.host.data", zbxParams);
+        if (!body || !body.ok) {
+          localChips.zabbix = { kind: "err", text: "Zabbix: lookup failed" };
+        } else if (body.source === "down") {
+          localChips.zabbix = { kind: "down", text: "Zabbix: unreachable" };
+        } else if (body.source === "not_found" || !body.host) {
+          localChips.zabbix = { kind: "not_found", text: "Zabbix: no match" };
+        } else {
+          zbxHost = body.host;
+          if (zbxHost.hostid) updates.zabbixHostid = zbxHost.hostid;
+          if (zbxHost.mgmtIp) updates.mgmtIp = zbxHost.mgmtIp;
+          localChips.zabbix = {
+            kind: "ok",
+            text: "Zabbix: " + (zbxHost.hostname || zbxHost.visibleName || zbxHost.hostid)
+          };
+        }
+      } else {
+        localChips.zabbix = { kind: "not_found", text: "Zabbix: skipped" };
       }
-      if (!body || !body.ok) { setHint({ kind: "err", text: "Lookup failed." }); return; }
-      if (body.source === "unconfigured") { setHint({ kind: "warn", text: "XIQ not configured (set {$XIQ.API_TOKEN})." }); return; }
-      if (body.source === "rate_limited") { setHint({ kind: "warn", text: "XIQ rate limit reached — try again shortly." }); return; }
-      if (body.source === "down")         { setHint({ kind: "err",  text: "XIQ unreachable." }); return; }
-      const d = body.device;
-      if (!d) { setHint({ kind: "warn", text: "No matching XIQ device." }); return; }
-
-      // Fill blanks only — never overwrite operator-typed values.
-      setF((prev) => {
-        const next = { ...prev };
-        const fillIfBlank = (k, v) => { if (v && (next[k] === undefined || next[k] === null || next[k] === "" || next[k] === 0)) next[k] = v; };
-        fillIfBlank("model",  d.model);
-        fillIfBlank("serial", d.serial);
-        fillIfBlank("mgmtIp", d.mgmtIp);
-        // External keys: always adopt when we matched.
-        if (d.id) next.xiqDeviceId = d.id;
-        if (d.zabbixHostidGuess && !next.zabbixHostid) next.zabbixHostid = d.zabbixHostidGuess;
-        return next;
-      });
-      setHint({ kind: "ok", text: "matched: " + (d.hostname || ("id " + d.id)) });
     } catch (e) {
-      setHint({ kind: "err", text: e.message || "Lookup error." });
-    } finally {
-      setBusy(false);
+      localChips.zabbix = { kind: "err", text: "Zabbix: " + (e.message || "error") };
     }
-  };
+    setChips({ ...localChips });
 
-  const hintColor = hint
-    ? (hint.kind === "ok"  ? "var(--teal)"
-    :  hint.kind === "warn" ? "var(--amber)"
-    :  /* err */              "var(--red, #c44)")
-    : null;
+    // ---------- 2) XIQ ----------
+    // Skip XIQ if Zabbix already gave us model+serial+id — we keep the contract
+    // that XIQ runs second and fills blanks. But here we have no model/serial
+    // from Zabbix, so always run unless the input is unusable.
+    try {
+      let xiqParams = null;
+      if (xiqTyped > 0) xiqParams = { id: xiqTyped };
+      else if (looksLikeInt) xiqParams = { id: +q };
+      else if (looksLikeMac) xiqParams = { mac: q };
+      else if (q) xiqParams = { hostname: q };
+
+      if (xiqParams) {
+        let body = await window.apiGet("closet.xiq.device.data", xiqParams);
+        if (body && body.ok && !body.device && xiqParams.hostname) {
+          body = await window.apiGet("closet.xiq.device.data", { serial: q });
+        }
+        if (!body || !body.ok) {
+          localChips.xiq = { kind: "err", text: "XIQ: lookup failed" };
+        } else if (body.source === "unconfigured") {
+          localChips.xiq = { kind: "unconfigured", text: "XIQ: not configured" };
+        } else if (body.source === "rate_limited") {
+          localChips.xiq = { kind: "rate_limited", text: "XIQ: rate-limited" };
+        } else if (body.source === "down") {
+          localChips.xiq = { kind: "down", text: "XIQ: unreachable" };
+        } else if (!body.device) {
+          localChips.xiq = { kind: "not_found", text: "XIQ: no match" };
+        } else {
+          const d = body.device;
+          if (d.model  && !updates.model)  updates.model  = d.model;
+          if (d.serial && !updates.serial) updates.serial = d.serial;
+          if (d.mgmtIp && !updates.mgmtIp) updates.mgmtIp = d.mgmtIp;
+          if (d.id) updates.xiqDeviceId = d.id;
+          // Only adopt XIQ's zabbix-hostid guess when Zabbix step didn't match.
+          if (!zbxHost && d.zabbixHostidGuess) updates.zabbixHostid = d.zabbixHostidGuess;
+          localChips.xiq = { kind: "ok", text: "XIQ: " + (d.hostname || ("id " + d.id)) };
+        }
+      } else {
+        localChips.xiq = { kind: "not_found", text: "XIQ: skipped" };
+      }
+    } catch (e) {
+      localChips.xiq = { kind: "err", text: "XIQ: " + (e.message || "error") };
+    }
+    setChips({ ...localChips });
+
+    // ---------- 3) rConfig ----------
+    // Needs a Zabbix hostid or a hostname to resolve the device.
+    try {
+      const rcHostid   = updates.zabbixHostid || zbxTyped || (zbxHost && zbxHost.hostid) || null;
+      const rcHostname = (!rcHostid && q && !looksLikeIp && !looksLikeInt && !looksLikeMac) ? q : null;
+
+      if (!rcHostid && !rcHostname) {
+        localChips.rconfig = { kind: "not_found", text: "rConfig: skipped" };
+      } else {
+        const rcParams = rcHostid ? { zabbixHostid: String(rcHostid) } : { hostname: rcHostname };
+        const body = await window.apiGet("closet.rconfig.device.data", rcParams);
+        if (!body || !body.ok) {
+          localChips.rconfig = { kind: "err", text: "rConfig: lookup failed" };
+        } else if (body.source === "unconfigured") {
+          localChips.rconfig = { kind: "unconfigured", text: "rConfig: not configured" };
+        } else if (body.source === "down") {
+          localChips.rconfig = { kind: "down", text: "rConfig: unreachable" };
+        } else if (body.source === "ambiguous") {
+          localChips.rconfig = { kind: "ambiguous", text: "rConfig: ambiguous match" };
+        } else if (body.source === "not_found" || !body.device) {
+          localChips.rconfig = { kind: "not_found", text: "rConfig: no match" };
+        } else {
+          const d = body.device;
+          if (d.id) updates.rconfigDeviceId = d.id;
+          const ageTxt = (d.lastBackupAgeDays == null)
+            ? "backup age unknown"
+            : `backup ${d.lastBackupAgeDays}d ago`;
+          localChips.rconfig = { kind: "ok", text: `rConfig: device ${d.id}, ${ageTxt}` };
+        }
+      }
+    } catch (e) {
+      localChips.rconfig = { kind: "err", text: "rConfig: " + (e.message || "error") };
+    }
+    setChips({ ...localChips });
+
+    // Apply field updates (fill-blanks only for plain fields; always adopt external ids).
+    setF((prev) => {
+      const next = { ...prev };
+      const fillIfBlank = (k, v) => {
+        if (v && (next[k] === undefined || next[k] === null || next[k] === "" || next[k] === 0)) next[k] = v;
+      };
+      if (updates.model)  fillIfBlank("model",  updates.model);
+      if (updates.serial) fillIfBlank("serial", updates.serial);
+      if (updates.mgmtIp) fillIfBlank("mgmtIp", updates.mgmtIp);
+      if (updates.zabbixHostid && !next.zabbixHostid) next.zabbixHostid = updates.zabbixHostid;
+      if (updates.xiqDeviceId)     next.xiqDeviceId     = updates.xiqDeviceId;
+      if (updates.rconfigDeviceId) next.rconfigDeviceId = updates.rconfigDeviceId;
+      return next;
+    });
+
+    setBusy(false);
+  };
 
   return React.createElement(Modal, {
     title: "Add switch",
@@ -167,7 +267,8 @@ function SwitchFormModal({ closet, onClose, onSave }) {
           vendor, model: rest.join(" "),
           ports: +f.ports, used: +f.used, uplinks: +f.uplinks, stack: +f.stack,
           xiqDeviceId: +f.xiqDeviceId || 0,
-          zabbixHostid: f.zabbixHostid || ""
+          zabbixHostid: f.zabbixHostid || "",
+          rconfigDeviceId: +f.rconfigDeviceId || 0
         });
       } }, React.createElement(Ic.Check, null), "Add switch")
     ),
@@ -178,18 +279,27 @@ function SwitchFormModal({ closet, onClose, onSave }) {
       style: { fontSize: 12, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--faint)", margin: "4px 0 8px" }
     }, "Lookup (optional autofill)"),
     React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "end" } },
-      React.createElement(Field, { label: "Hostname / MAC / serial", hint: "Pulls model, serial, mgmt IP from ExtremeCloud IQ." },
-        React.createElement("input", { className: "input mono", value: lookup, onChange: (e) => setLookup(e.target.value), placeholder: "RHS-IDF-SW1 or aa:bb:cc:dd:ee:ff", onKeyDown: (e) => { if (e.key === "Enter") { e.preventDefault(); doFind(); } } })),
+      React.createElement(Field, { label: "Hostname / IP / MAC / serial / id", hint: "Searches Zabbix, then XIQ, then rConfig." },
+        React.createElement("input", { className: "input mono", value: lookup, onChange: (e) => setLookup(e.target.value), placeholder: "RHS-IDF-SW1 or 10.10.0.2", onKeyDown: (e) => { if (e.key === "Enter") { e.preventDefault(); doFind(); } } })),
       React.createElement("button", { className: "btn", disabled: busy, style: { height: 38 }, onClick: doFind },
         React.createElement(Ic.Search || Ic.Check, null), busy ? "Searching…" : "Find")
     ),
     React.createElement("div", { className: "field-row" },
-      React.createElement(Field, { label: "XIQ device ID", hint: "Numeric XIQ id (autofilled by Find)." },
-        React.createElement("input", { className: "input mono", value: f.xiqDeviceId, onChange: (e) => set("xiqDeviceId", e.target.value.replace(/[^0-9]/g, "")), placeholder: "1234567" })),
       React.createElement(Field, { label: "Zabbix host id", hint: "Numeric Zabbix hostid (autofilled when one matches)." },
-        React.createElement("input", { className: "input mono", value: f.zabbixHostid, onChange: (e) => set("zabbixHostid", e.target.value.replace(/[^0-9]/g, "")), placeholder: "12345" }))
+        React.createElement("input", { className: "input mono", value: f.zabbixHostid, onChange: (e) => set("zabbixHostid", e.target.value.replace(/[^0-9]/g, "")), placeholder: "12345" })),
+      React.createElement(Field, { label: "XIQ device ID", hint: "Numeric XIQ id (autofilled by Find)." },
+        React.createElement("input", { className: "input mono", value: f.xiqDeviceId, onChange: (e) => set("xiqDeviceId", e.target.value.replace(/[^0-9]/g, "")), placeholder: "1234567" }))
     ),
-    hint && React.createElement("div", { style: { fontSize: 12.5, color: hintColor, margin: "-4px 0 12px" } }, hint.text),
+    React.createElement(Field, { label: "rConfig device ID", hint: "Numeric rConfig device id (autofilled by Find)." },
+      React.createElement("input", { className: "input mono", value: f.rconfigDeviceId, onChange: (e) => set("rconfigDeviceId", e.target.value.replace(/[^0-9]/g, "")), placeholder: "88" })),
+    chips && React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, margin: "-2px 0 12px" } },
+      ["zabbix", "xiq", "rconfig"].map((src) => {
+        const c = chips[src];
+        if (!c) return null;
+        const st = CHIP_STYLES[c.kind] || CHIP_STYLES.err;
+        return React.createElement("span", { key: src, className: "uplink-tag", style: st }, c.text);
+      })
+    ),
     // -------- Standard fields --------
     React.createElement("div", { className: "field-row" },
       React.createElement(Field, { label: "Name / hostname", req: true },

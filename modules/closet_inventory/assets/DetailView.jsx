@@ -45,6 +45,25 @@ function SwitchRow({ s, zabbixSource }) {
             ? { background: "var(--teal-soft)", color: "var(--teal)", borderColor: "color-mix(in oklch, var(--teal) 25%, transparent)" }
             : { background: "var(--surface-2)", color: "var(--muted)", borderColor: "var(--border)" }
         }, s.xiqConnected ? "XIQ: online" : "XIQ: offline"),
+        (s.configBackupAgeDays != null) && (function () {
+          const days = +s.configBackupAgeDays;
+          let style, txt;
+          if (days <= 7) {
+            style = { background: "var(--teal-soft)", color: "var(--teal)", borderColor: "color-mix(in oklch, var(--teal) 25%, transparent)" };
+            txt = `Backup ${days}d ago`;
+          } else if (days <= 30) {
+            style = { background: "var(--amber-soft)", color: "var(--amber)", borderColor: "color-mix(in oklch, var(--amber) 25%, transparent)" };
+            txt = `Backup ${days}d ago`;
+          } else {
+            style = { background: "var(--surface-2)", color: "var(--red, #c44)", borderColor: "color-mix(in oklch, var(--red, #c44) 25%, transparent)" };
+            txt = `Backup ${days}d old`;
+          }
+          return React.createElement("span", {
+            className: "uplink-tag",
+            title: s.configBackupAt ? ("Last config backup: " + s.configBackupAt) : "From rConfig",
+            style
+          }, txt);
+        })(),
         liveChip
       ),
       React.createElement("div", { className: "swrow__model" }, `${s.vendor} ${s.model}`,
@@ -62,7 +81,14 @@ function SwitchRow({ s, zabbixSource }) {
           React.createElement("div", { className: "spec__v" }, `${s.uplinks} × ${s.uplinkSpeed}`)),
         React.createElement("div", { className: "spec" },
           React.createElement("div", { className: "spec__k" }, "Serial"),
-          React.createElement("div", { className: "spec__v" }, s.serial))
+          React.createElement("div", { className: "spec__v" }, s.serial)),
+        (s.poe === true || s.poeStatus === "DeliveringPower") && React.createElement("div", { className: "spec", style: { marginLeft: "auto" } },
+          React.createElement("button", {
+            className: "btn btn--sm",
+            disabled: true,
+            style: { opacity: 0.55, pointerEvents: "none" },
+            title: "PoE cycle not configured — set {$RCONFIG.POE_SNIPPET_ID} to enable"
+          }, React.createElement(Ic.Bolt, null), "Cycle PoE"))
       )
     )
   );

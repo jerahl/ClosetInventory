@@ -224,7 +224,8 @@ function App() {
         mgmtIp: sw.mgmtIp || "", serial: sw.serial || "",
         stack: +sw.stack || 1,
         xiqDeviceId: +sw.xiqDeviceId || 0,
-        zabbixHostid: sw.zabbixHostid || ""
+        zabbixHostid: sw.zabbixHostid || "",
+        rconfigDeviceId: +sw.rconfigDeviceId || 0
       });
       toast("Switch added to " + c.code + ".");
       setModal(null);
@@ -269,6 +270,18 @@ function App() {
     try {
       await apiPost("closet.seed", {});
       toast("Starter data seeded.");
+      await loadList();
+    } catch (e) { toast(e.message); }
+  };
+
+  const populateZabbix = async () => {
+    try {
+      const body = await apiPost("closet.populate.zabbix", {});
+      if (!body.ok) { toast("Populate failed: " + (body.error || "unknown")); return; }
+      const errs = (body.errors && body.errors.length) ? ` · ${body.errors.length} warning${body.errors.length === 1 ? "" : "s"}` : "";
+      toast(
+        `Zabbix import: +${body.schoolsCreated || 0} schools, +${body.closetsCreated || 0} closets, +${body.switchesCreated || 0} switches (scanned ${body.hostsScanned || 0} hosts)${errs}`
+      );
       await loadList();
     } catch (e) { toast(e.message); }
   };
@@ -354,6 +367,7 @@ function App() {
                   onFlag: (c) => setModal({ kind: "flag", closet: c }),
                   onRefreshCounters: refreshCounters,
                   onSeed: seedStarter,
+                  onPopulateZabbix: populateZabbix,
                   isAdmin: !!BOOT.isAdmin,
                 })
       )

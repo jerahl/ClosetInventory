@@ -43,7 +43,7 @@ function SortHead({ label, col, sort, setSort, alignRight }) {
   );
 }
 
-function ListView({ closets, query, onOpen, onAddCloset, onFlag, onRefreshCounters, onSeed, isAdmin }) {
+function ListView({ closets, query, onOpen, onAddCloset, onFlag, onRefreshCounters, onSeed, onPopulateZabbix, isAdmin }) {
   const [school, setSchool] = React.useState("all");
   const [type, setType] = React.useState("all");
   const [flaggedOnly, setFlaggedOnly] = React.useState(false);
@@ -97,6 +97,11 @@ function ListView({ closets, query, onOpen, onAddCloset, onFlag, onRefreshCounte
           title: "Re-run Zabbix enrichment for every closet and write the new port counts back to the cached columns.",
           onClick: onRefreshCounters
         }, React.createElement(Ic.Network, null), "Refresh counters"),
+        isAdmin && onPopulateZabbix && React.createElement("button", {
+          className: "btn",
+          title: "Walk every Site/* host group in Zabbix and idempotently create missing schools, closets, and switches.",
+          onClick: onPopulateZabbix
+        }, React.createElement(Ic.Server, null), "Populate from Zabbix"),
         React.createElement("button", { className: "btn btn--primary", onClick: onAddCloset }, React.createElement(Ic.Plus, null), "Add closet")
       )
     ),
@@ -112,6 +117,9 @@ function ListView({ closets, query, onOpen, onAddCloset, onFlag, onRefreshCounte
       React.createElement("div", { style: { display: "inline-flex", gap: 8 } },
         React.createElement("button", { className: "btn btn--primary", onClick: onAddCloset },
           React.createElement(Ic.Plus, null), "Add your first closet"
+        ),
+        isAdmin && onPopulateZabbix && React.createElement("button", { className: "btn", onClick: onPopulateZabbix },
+          React.createElement(Ic.Server, null), "Populate from Zabbix"
         ),
         isAdmin && onSeed && React.createElement("button", { className: "btn", onClick: onSeed },
           React.createElement(Ic.Server, null), "Seed starter data"

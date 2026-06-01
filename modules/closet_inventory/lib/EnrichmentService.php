@@ -38,6 +38,9 @@ class EnrichmentService {
     /** XIQ per-device cache TTL (seconds). */
     private const TTL_XIQ_DEVICE = 300;
 
+    /** rConfig per-device cache TTL (seconds). */
+    private const TTL_RCONFIG_DEVICE = 300;
+
     private Cache $cache;
 
     /** Lazy-built XIQ clients; null when no credentials are configured. */
@@ -46,6 +49,10 @@ class EnrichmentService {
     private bool $xiqInitTried = false;
     /** True once the current enrich() pass caught a 429. */
     private bool $xiqRateLimitTripped = false;
+
+    /** Lazy-built rConfig client; null when {$RCONFIG.URL}/{$RCONFIG.TOKEN} unset. */
+    private ?RConfigClient $rconfigClient = null;
+    private bool $rconfigInitTried = false;
 
     public function __construct(?Cache $cache = null) {
         // Cache is a static facade today; the param exists so tests can swap.
@@ -83,6 +90,31 @@ class EnrichmentService {
             $this->xiqFleet  = null;
         }
         return $this->xiqClient !== null;
+    }
+
+    /**
+     * Build the rConfig client on first use. Returns null when either
+     * {$RCONFIG.URL} or {$RCONFIG.TOKEN} is missing.
+     */
+    private function ensureRconfigClient(): ?RConfigClient {
+        if ($this->rconfigInitTried) {
+            return $this->rconfigClient;
+        }
+        $this->rconfigInitTried = true;
+
+        $url   = Config::rconfigUrl();
+        $token = Config::rconfigToken();
+        if ($url === null || $token === null) {
+            return null;
+        }
+        try {
+            $this->rconfigClient = new RConfigClient($url, $token);
+        }
+        catch (Throwable $e) {
+            DebugLog::log('Enrichment.rconfig.initFail', ['error' => $e->getMessage()]);
+            $this->rconfigClient = null;
+        }
+        return $this->rconfigClient;
     }
 
     /**
@@ -145,6 +177,23 @@ class EnrichmentService {
             $xiqResult['warnings'][]  = 'xiq fatal: '.$e->getMessage();
         }
 
+        // -------- rConfig pass (wrapped — must never throw out of enrich()) ----
+        $rcResult = [
+            'configured'  => false,
+            'any_success' => false,
+            'any_failure' => false,
+            'warnings'    => []
+        ];
+        try {
+            $rcResult = $this->runRconfigPass($switches, $closet);
+            $closet['switches'] = $switches;
+        }
+        catch (Throwable $e) {
+            DebugLog::log('Enrichment.rconfig.fatal', ['error' => $e->getMessage()]);
+            $rcResult['any_failure'] = true;
+            $rcResult['warnings'][]  = 'rconfig fatal: '.$e->getMessage();
+        }
+
         // Recompute closet-level counters from the (possibly updated) switch
         // rows so the design's port totals reflect the live numbers.
         $portsTotal = 0;
@@ -188,8 +237,19 @@ class EnrichmentService {
             $sources['xiq'] = 'unconfigured';
         }
 
-        // rConfig still untouched in Phase 3.
-        $sources['rconfig']  = $sources['rconfig']  ?? 'unconfigured';
+        // rConfig source aggregation.
+        if (!$rcResult['configured']) {
+            $sources['rconfig'] = 'unconfigured';
+        }
+        elseif ($rcResult['any_success']) {
+            $sources['rconfig'] = 'ok';
+        }
+        elseif ($rcResult['any_failure']) {
+            $sources['rconfig'] = 'down';
+        }
+        else {
+            $sources['rconfig'] = 'unconfigured';
+        }
 
         $live['sources'] = $sources;
         $live['xiqRateLimitRemaining'] = $xiqResult['remaining'];
@@ -197,6 +257,9 @@ class EnrichmentService {
         $allWarnings = $warnings;
         if (!empty($xiqResult['warnings'])) {
             $allWarnings = array_merge($allWarnings, $xiqResult['warnings']);
+        }
+        if (!empty($rcResult['warnings'])) {
+            $allWarnings = array_merge($allWarnings, $rcResult['warnings']);
         }
         if ($allWarnings !== []) {
             $live['warnings'] = $allWarnings;
@@ -586,5 +649,123 @@ class EnrichmentService {
             'filled'    => $filled,
             'connected' => $switch['xiqConnected'],
         ]);
+    }
+
+    /**
+     * rConfig enrichment pass. Mutates $switches in place. Acts only on
+     * switches that already carry a non-null `rconfig_device_id`
+     * (resolving rConfig device ids belongs to the Add-Switch lookup flow,
+     * not to the per-page enrichment hot path).
+     *
+     * @param array<int, array<string, mixed>> $switches  by-reference
+     * @param array<string, mixed>             $closet    used for context only
+     * @return array{configured:bool,any_success:bool,any_failure:bool,warnings:array<int,string>}
+     */
+    private function runRconfigPass(array &$switches, array $closet): array {
+        $out = [
+            'configured'  => false,
+            'any_success' => false,
+            'any_failure' => false,
+            'warnings'    => []
+        ];
+
+        $eligible = 0;
+        foreach ($switches as $sw) {
+            $id = (int) ($sw['rconfigDeviceId'] ?? $sw['rconfig_device_id'] ?? 0);
+            if ($id > 0) $eligible++;
+        }
+        if ($eligible === 0) {
+            return $out;
+        }
+
+        $client = $this->ensureRconfigClient();
+        if ($client === null) {
+            // Switches reference rConfig but no creds — surface as unconfigured.
+            return $out;
+        }
+        $out['configured'] = true;
+
+        foreach ($switches as $i => $sw) {
+            $id = (int) ($sw['rconfigDeviceId'] ?? $sw['rconfig_device_id'] ?? 0);
+            if ($id <= 0) continue;
+            try {
+                $this->mergeRconfigInto($switches[$i], $closet);
+                if (!empty($switches[$i]['_rconfigMergedOk'])) {
+                    $out['any_success'] = true;
+                    unset($switches[$i]['_rconfigMergedOk']);
+                }
+                if (!empty($switches[$i]['_rconfigFailed'])) {
+                    $out['any_failure'] = true;
+                    $out['warnings'][]  = 'rconfig:device:'.$id.' '
+                        .((string) ($switches[$i]['_rconfigFailReason'] ?? 'down'));
+                    unset($switches[$i]['_rconfigFailed'], $switches[$i]['_rconfigFailReason']);
+                }
+            }
+            catch (Throwable $e) {
+                $out['any_failure'] = true;
+                $out['warnings'][]  = 'rconfig:device:'.$id.' '.$e->getMessage();
+                DebugLog::log('Enrichment.rconfig.deviceFail', [
+                    'id'    => $id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Merge rConfig backup-age info onto a single switch row. Acts only when
+     * the switch carries an rConfig device id. Cached for TTL_RCONFIG_DEVICE
+     * seconds per device.
+     *
+     * Internal signaling consumed and stripped by runRconfigPass:
+     *   _rconfigMergedOk     bool — call succeeded
+     *   _rconfigFailed       bool — call threw
+     *   _rconfigFailReason   string
+     *
+     * @param array<string, mixed> $switch by-reference
+     * @param array<string, mixed> $closet unused for now
+     */
+    private function mergeRconfigInto(array &$switch, array $closet): void {
+        $id = (int) ($switch['rconfigDeviceId'] ?? $switch['rconfig_device_id'] ?? 0);
+        if ($id <= 0 || $this->rconfigClient === null) {
+            return;
+        }
+
+        $cacheKey = 'closet_inv:rconfig_device:'.$id;
+        $info = null;
+        $hit = Cache::get($cacheKey);
+        if ($hit !== null) {
+            $decoded = json_decode($hit, true);
+            if (is_array($decoded)) {
+                $info = $decoded;
+            }
+        }
+
+        if ($info === null) {
+            try {
+                $info = $this->rconfigClient->getDeviceConfigBackupInfo($id);
+                Cache::set($cacheKey, (string) json_encode($info), self::TTL_RCONFIG_DEVICE);
+            }
+            catch (Throwable $e) {
+                $switch['_rconfigFailed']     = true;
+                $switch['_rconfigFailReason'] = $e->getMessage();
+                DebugLog::log('Enrichment.rconfig.getInfoFail', [
+                    'id'    => $id,
+                    'error' => $e->getMessage()
+                ]);
+                return;
+            }
+        }
+
+        $age = $info['lastBackupAgeDays'] ?? null;
+        if ($age !== null) {
+            $switch['configBackupAgeDays'] = (int) $age;
+        }
+        if (!empty($info['lastBackupAt'])) {
+            $switch['configBackupAt'] = (string) $info['lastBackupAt'];
+        }
+        $switch['_rconfigMergedOk'] = true;
     }
 }
