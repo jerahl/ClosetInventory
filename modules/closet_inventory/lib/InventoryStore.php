@@ -265,6 +265,11 @@ class InventoryStore {
         $uid = isset($p['uid']) && (int) $p['uid'] > 0 ? (int) $p['uid'] : 0;
 
         if ($uid > 0) {
+            // Never overwrite the existing code with an empty string — an empty
+            // code from the modal means the operator wasn't editing that field.
+            if ($fields['code'] === '') {
+                unset($fields['code']);
+            }
             $this->dbUpdate('tcs_closet_closets', $fields, ['uid' => $uid]);
         }
         else {

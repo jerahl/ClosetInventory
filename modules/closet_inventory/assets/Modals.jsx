@@ -6,7 +6,7 @@ function ClosetFormModal({ closet, onClose, onSave }) {
     schoolId: (window.SeedData && window.SeedData.schools[0] && window.SeedData.schools[0].id) || "", type: "IDF", floor: 1, building: "Main", room: "",
   });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
-  const valid = f.room.trim().length > 0;
+  const valid = f.room.trim().length > 0 && (!editing || (f.code && f.code.trim().length > 0));
 
   return React.createElement(Modal, {
     title: editing ? "Edit closet" : "Add switch closet",
@@ -40,7 +40,9 @@ function ClosetFormModal({ closet, onClose, onSave }) {
     React.createElement(Field, { label: "Room", req: true, hint: "e.g. \u201cData Closet 204\u201d or \u201cTelecom Rm 1A\u201d" },
       React.createElement("input", { className: "input", value: f.room, onChange: (e) => set("room", e.target.value), placeholder: "Data Closet 204", autoFocus: true })),
     !editing && React.createElement(Field, { label: "Closet ID", hint: "Auto-generated from site + type. Editable after creation." },
-      React.createElement("input", { className: "input mono", disabled: true, value: f.type === "MDF" ? `${f.schoolId}-MDF` : `${f.schoolId}-IDF-${f.floor}xx`, style: { color: "var(--muted)", background: "var(--surface-2)" } }))
+      React.createElement("input", { className: "input mono", disabled: true, value: f.type === "MDF" ? `${f.schoolId}-MDF` : `${f.schoolId}-IDF-${f.floor}xx`, style: { color: "var(--muted)", background: "var(--surface-2)" } })),
+    editing && React.createElement(Field, { label: "Closet ID", req: true, hint: "Must be unique across the district. Renaming updates every reference." },
+      React.createElement("input", { className: "input mono", value: f.code || "", onChange: (e) => set("code", e.target.value), placeholder: "e.g. RHS-IDF-203" }))
   );
 }
 
