@@ -107,9 +107,7 @@ final class Config {
         }
         catch (Throwable $e) {
             // Treat lookup failure as "unset" — never let macro resolution
-            // throw out of a request. The error is recorded in DebugLog so
-            // operators can see it without revealing macro values.
-            DebugLog::log('Config.macro.error', ['macro' => $name, 'error' => $e->getMessage()]);
+            // throw out of a request.
             $value = null;
         }
 

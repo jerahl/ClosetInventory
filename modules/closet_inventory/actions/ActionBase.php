@@ -6,7 +6,6 @@ use CController;
 use CControllerResponseData;
 use CWebUser;
 use CCsrfTokenHelper;
-use Modules\ClosetInventory\Lib\DebugLog;
 
 /**
  * Base controller for page-render (HTML) actions in the Closet Inventory
@@ -22,12 +21,6 @@ abstract class ActionBase extends CController {
     protected function checkPermissions(): bool {
         $loggedIn = CWebUser::isLoggedIn();
         $type = $loggedIn ? $this->getUserType() : -1;
-        DebugLog::log('ActionBase.checkPermissions', [
-            'class'    => static::class,
-            'loggedIn' => $loggedIn,
-            'userType' => $type,
-            'allowed'  => $loggedIn,
-        ]);
         return $loggedIn;
     }
 

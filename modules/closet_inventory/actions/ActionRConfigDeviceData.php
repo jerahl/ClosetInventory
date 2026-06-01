@@ -6,7 +6,6 @@ use API;
 use CControllerResponseData;
 use Modules\ClosetInventory\Lib\Cache;
 use Modules\ClosetInventory\Lib\Config;
-use Modules\ClosetInventory\Lib\DebugLog;
 use Modules\ClosetInventory\Lib\RConfigAmbiguousMatchException;
 use Modules\ClosetInventory\Lib\RConfigClient;
 use Throwable;
@@ -57,7 +56,6 @@ class ActionRConfigDeviceData extends ActionDataBase {
             $client = new RConfigClient($url, $token);
         }
         catch (Throwable $e) {
-            DebugLog::log('ActionRConfigDeviceData.initFail', ['error' => $e->getMessage()]);
             $this->respondEmpty('down');
             return;
         }
@@ -95,7 +93,6 @@ class ActionRConfigDeviceData extends ActionDataBase {
                 $this->respondEmpty('not_found');
                 return;
             }
-            DebugLog::log('ActionRConfigDeviceData.resolveFail', ['error' => $msg]);
             $this->respondEmpty('down');
             return;
         }
@@ -119,7 +116,6 @@ class ActionRConfigDeviceData extends ActionDataBase {
                 Cache::set($cacheKey, (string) json_encode($info), self::TTL_DEVICE);
             }
             catch (Throwable $e) {
-                DebugLog::log('ActionRConfigDeviceData.backupFail', ['id' => $deviceId, 'error' => $e->getMessage()]);
                 $this->respondEmpty('down');
                 return;
             }
@@ -163,7 +159,6 @@ class ActionRConfigDeviceData extends ActionDataBase {
             $rows = API::Host()->get($get);
         }
         catch (Throwable $e) {
-            DebugLog::log('ActionRConfigDeviceData.host.get.fail', ['error' => $e->getMessage()]);
             return null;
         }
         if (!is_array($rows) || $rows === []) {

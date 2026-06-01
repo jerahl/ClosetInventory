@@ -5,7 +5,6 @@ namespace Modules\ClosetInventory\Actions;
 use CController;
 use CControllerResponseData;
 use CWebUser;
-use Modules\ClosetInventory\Lib\DebugLog;
 use Modules\ClosetInventory\Lib\InventoryStore;
 
 /**
@@ -68,11 +67,6 @@ class ActionSwitchMove extends CController {
             }
             $src = (int) $res['sourceClosetUid'];
             $store->audit('closet.switch.move', 'switch:'.$switchId, $src.' -> '.$target);
-            DebugLog::log('ActionSwitchMove.ok', [
-                'switchId' => $switchId,
-                'source'   => $src,
-                'target'   => $target
-            ]);
             $this->setResponse(new CControllerResponseData([
                 'main_block' => json_encode([
                     'ok'              => true,
@@ -81,7 +75,6 @@ class ActionSwitchMove extends CController {
             ]));
         }
         catch (\Throwable $e) {
-            DebugLog::log('ActionSwitchMove.fatal', ['error' => $e->getMessage()]);
             http_response_code(500);
             $this->setResponse(new CControllerResponseData([
                 'main_block' => json_encode(['ok' => false, 'error' => $e->getMessage()])

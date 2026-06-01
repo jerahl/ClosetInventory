@@ -5,7 +5,6 @@ namespace Modules\ClosetInventory\Actions;
 use API;
 use CControllerResponseData;
 use Modules\ClosetInventory\Lib\Cache;
-use Modules\ClosetInventory\Lib\DebugLog;
 use Modules\ClosetInventory\Lib\SchoolMapper;
 use Throwable;
 
@@ -72,7 +71,6 @@ class ActionZabbixHostData extends ActionDataBase {
             $row = $this->lookupHost($hostid, $hostname, $ip);
         }
         catch (Throwable $e) {
-            DebugLog::log('ActionZabbixHostData.lookupFail', ['error' => $e->getMessage()]);
             $this->setResponse(new CControllerResponseData([
                 'main_block' => json_encode([
                     'ok'     => true,

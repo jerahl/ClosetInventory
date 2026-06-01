@@ -5,7 +5,6 @@ namespace Modules\ClosetInventory\Actions;
 use CController;
 use CControllerResponseData;
 use CWebUser;
-use Modules\ClosetInventory\Lib\DebugLog;
 
 /**
  * Shared base for closet.*.data JSON controllers.
@@ -23,10 +22,6 @@ abstract class ActionDataBase extends CController {
     protected function checkPermissions(): bool {
         $loggedIn = CWebUser::isLoggedIn();
         if (!$loggedIn) {
-            DebugLog::log('ActionDataBase.checkPermissions.deny', [
-                'class'  => static::class,
-                'reason' => 'not_logged_in',
-            ]);
             http_response_code(401);
             $this->setResponse(new CControllerResponseData([
                 'main_block' => json_encode(['error' => 'unauthenticated'])
@@ -36,11 +31,6 @@ abstract class ActionDataBase extends CController {
 
         $type = $this->getUserType();
         $allowed = $type >= USER_TYPE_ZABBIX_USER;
-        DebugLog::log('ActionDataBase.checkPermissions', [
-            'class'    => static::class,
-            'userType' => $type,
-            'allowed'  => $allowed,
-        ]);
         return $allowed;
     }
 }

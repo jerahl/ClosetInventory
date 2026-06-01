@@ -5,7 +5,6 @@ namespace Modules\ClosetInventory;
 use APP;
 use Zabbix\Core\CModule;
 use CMenuItem;
-use Modules\ClosetInventory\Lib\DebugLog;
 
 /**
  * Closet Inventory module bootstrap.
@@ -20,36 +19,12 @@ class Module extends CModule {
     private const SCHEMA_TARGET = 1;
 
     public function init(): void {
-        $actions = [];
-        try {
-            $m = $this->getManifest();
-            $actions = is_array($m) ? array_keys($m['actions'] ?? []) : [];
-        }
-        catch (\Throwable $e) {
-            $actions = ['ERR:'.$e->getMessage()];
-        }
-
-        DebugLog::log('Module.init.enter', [
-            'phpVersion'        => PHP_VERSION,
-            'manifest'          => __DIR__ . '/manifest.json',
-            'registeredActions' => $actions,
-            'baseClass'         => parent::class,
-        ]);
-
-        try {
-            $this->registerMenu();
-            DebugLog::log('Module.init.menuRegistered');
-        }
-        catch (\Throwable $e) {
-            DebugLog::log('Module.init.menuFailed', ['error' => $e->getMessage()]);
-        }
+        $this->registerMenu();
 
         try {
             $this->installSchema();
-            DebugLog::log('Module.init.schemaOK');
         }
         catch (\Throwable $e) {
-            DebugLog::log('Module.init.schemaFailed', ['error' => $e->getMessage()]);
             // Never let a schema hiccup fatal-out the menu. Log via Zabbix's
             // error() helper if available.
             if (function_exists('error')) {
@@ -61,19 +36,16 @@ class Module extends CModule {
     private function registerMenu(): void {
         $main_menu = APP::Component()->get('menu.main');
         if ($main_menu === null) {
-            DebugLog::log('Module.registerMenu.noMenu');
             return;
         }
 
         $monitoring = $main_menu->find(_('Monitoring'));
         if ($monitoring === null) {
-            DebugLog::log('Module.registerMenu.noMonitoring');
             return;
         }
 
         $submenu = $monitoring->getSubmenu();
         $submenu->add((new CMenuItem(_('Closet Inventory')))->setAction('closet.list'));
-        DebugLog::log('Module.registerMenu.added', ['under' => 'Monitoring']);
     }
 
     /**
@@ -104,7 +76,6 @@ class Module extends CModule {
             if ($probe === false || $probe === null) {
                 \DBexecute('DELETE FROM tcs_closet_schema_version');
                 $current = 0;
-                DebugLog::log('Module.installSchema.selfHeal', ['reason' => 'tcs_closet_schools missing']);
             }
             else {
                 return;

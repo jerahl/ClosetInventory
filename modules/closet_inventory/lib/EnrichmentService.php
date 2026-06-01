@@ -85,7 +85,6 @@ class EnrichmentService {
             }
         }
         catch (Throwable $e) {
-            DebugLog::log('Enrichment.xiq.initFailed', ['error' => $e->getMessage()]);
             $this->xiqClient = null;
             $this->xiqFleet  = null;
         }
@@ -111,7 +110,6 @@ class EnrichmentService {
             $this->rconfigClient = new RConfigClient($url, $token);
         }
         catch (Throwable $e) {
-            DebugLog::log('Enrichment.rconfig.initFail', ['error' => $e->getMessage()]);
             $this->rconfigClient = null;
         }
         return $this->rconfigClient;
@@ -172,7 +170,6 @@ class EnrichmentService {
             $closet['switches'] = $switches; // mergeXiqInto wrote by-ref via runXiqPass
         }
         catch (Throwable $e) {
-            DebugLog::log('Enrichment.xiq.fatal', ['error' => $e->getMessage()]);
             $xiqResult['any_failure'] = true;
             $xiqResult['warnings'][]  = 'xiq fatal: '.$e->getMessage();
         }
@@ -189,7 +186,6 @@ class EnrichmentService {
             $closet['switches'] = $switches;
         }
         catch (Throwable $e) {
-            DebugLog::log('Enrichment.rconfig.fatal', ['error' => $e->getMessage()]);
             $rcResult['any_failure'] = true;
             $rcResult['warnings'][]  = 'rconfig fatal: '.$e->getMessage();
         }
@@ -504,7 +500,6 @@ class EnrichmentService {
                 $eligible++;
             }
         }
-        DebugLog::log('Enrichment.xiq.start', ['switchesWithXiqId' => $eligible]);
 
         if ($eligible === 0) {
             return $out;
@@ -551,7 +546,6 @@ class EnrichmentService {
                 // Defensive — mergeXiqInto should not throw.
                 $out['any_failure'] = true;
                 $out['warnings'][]  = 'xiq:device:'.$id.' '.$e->getMessage();
-                DebugLog::log('Enrichment.xiq.deviceFail', ['id' => $id, 'error' => $e->getMessage()]);
             }
         }
 
@@ -562,7 +556,6 @@ class EnrichmentService {
             catch (Throwable $e) {
                 $out['remaining'] = null;
             }
-            DebugLog::log('Enrichment.xiq.rateLimit', ['remaining' => $out['remaining']]);
         }
 
         return $out;
@@ -607,13 +600,11 @@ class EnrichmentService {
             }
             catch (XIQRateLimitException $e) {
                 $switch['_xiqRateLimited'] = true;
-                DebugLog::log('Enrichment.xiq.rateLimited', ['id' => $id]);
                 return;
             }
             catch (Throwable $e) {
                 $switch['_xiqFailed']     = true;
                 $switch['_xiqFailReason'] = $e->getMessage();
-                DebugLog::log('Enrichment.xiq.getDeviceFail', ['id' => $id, 'error' => $e->getMessage()]);
                 return;
             }
         }
@@ -644,11 +635,6 @@ class EnrichmentService {
         $switch['xiqSoftware']  = (string) ($device['firmware'] ?? '') ?: null;
 
         $switch['_xiqMergedOk'] = true;
-        DebugLog::log('Enrichment.xiq.deviceMerged', [
-            'id'        => $id,
-            'filled'    => $filled,
-            'connected' => $switch['xiqConnected'],
-        ]);
     }
 
     /**
@@ -704,10 +690,6 @@ class EnrichmentService {
             catch (Throwable $e) {
                 $out['any_failure'] = true;
                 $out['warnings'][]  = 'rconfig:device:'.$id.' '.$e->getMessage();
-                DebugLog::log('Enrichment.rconfig.deviceFail', [
-                    'id'    => $id,
-                    'error' => $e->getMessage()
-                ]);
             }
         }
 
@@ -751,10 +733,6 @@ class EnrichmentService {
             catch (Throwable $e) {
                 $switch['_rconfigFailed']     = true;
                 $switch['_rconfigFailReason'] = $e->getMessage();
-                DebugLog::log('Enrichment.rconfig.getInfoFail', [
-                    'id'    => $id,
-                    'error' => $e->getMessage()
-                ]);
                 return;
             }
         }

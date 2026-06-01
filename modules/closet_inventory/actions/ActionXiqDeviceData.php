@@ -5,7 +5,6 @@ namespace Modules\ClosetInventory\Actions;
 use API;
 use CControllerResponseData;
 use Modules\ClosetInventory\Lib\Config;
-use Modules\ClosetInventory\Lib\DebugLog;
 use Modules\ClosetInventory\Lib\XIQClient;
 use Modules\ClosetInventory\Lib\XIQFleetClient;
 use Modules\ClosetInventory\Lib\XIQRateLimitException;
@@ -64,7 +63,6 @@ class ActionXiqDeviceData extends ActionDataBase {
             $fleet  = XIQFleetClient::fromToken($token);
         }
         catch (Throwable $e) {
-            DebugLog::log('ActionXiqDeviceData.initFail', ['error' => $e->getMessage()]);
             $this->respondEmpty('down');
             return;
         }
@@ -86,7 +84,6 @@ class ActionXiqDeviceData extends ActionDataBase {
             return;
         }
         catch (Throwable $e) {
-            DebugLog::log('ActionXiqDeviceData.lookupFail', ['error' => $e->getMessage()]);
             $this->respondEmpty('down');
             return;
         }

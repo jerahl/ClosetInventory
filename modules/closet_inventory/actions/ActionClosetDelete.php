@@ -5,7 +5,6 @@ namespace Modules\ClosetInventory\Actions;
 use CController;
 use CControllerResponseData;
 use CWebUser;
-use Modules\ClosetInventory\Lib\DebugLog;
 use Modules\ClosetInventory\Lib\InventoryStore;
 
 /**
@@ -63,7 +62,6 @@ class ActionClosetDelete extends CController {
                 return;
             }
             $store->audit('closet.delete', 'closet:'.$uid, 'switches='.(int) $res['switches']);
-            DebugLog::log('ActionClosetDelete.ok', ['uid' => $uid, 'switches' => (int) $res['switches']]);
             $this->setResponse(new CControllerResponseData([
                 'main_block' => json_encode([
                     'ok'       => true,
@@ -73,7 +71,6 @@ class ActionClosetDelete extends CController {
             ]));
         }
         catch (\Throwable $e) {
-            DebugLog::log('ActionClosetDelete.fatal', ['error' => $e->getMessage()]);
             http_response_code(500);
             $this->setResponse(new CControllerResponseData([
                 'main_block' => json_encode(['ok' => false, 'error' => $e->getMessage()])

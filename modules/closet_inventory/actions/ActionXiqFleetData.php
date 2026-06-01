@@ -4,7 +4,6 @@ namespace Modules\ClosetInventory\Actions;
 
 use CControllerResponseData;
 use Modules\ClosetInventory\Lib\Config;
-use Modules\ClosetInventory\Lib\DebugLog;
 use Modules\ClosetInventory\Lib\XIQClient;
 use Modules\ClosetInventory\Lib\XIQFleetClient;
 use Modules\ClosetInventory\Lib\XIQRateLimitException;
@@ -37,7 +36,6 @@ class ActionXiqFleetData extends ActionDataBase {
             $client = XIQClient::fromToken($token);
         }
         catch (Throwable $e) {
-            DebugLog::log('ActionXiqFleetData.initFail', ['error' => $e->getMessage()]);
             $this->respond([], 'down', null, null);
             return;
         }
@@ -50,7 +48,6 @@ class ActionXiqFleetData extends ActionDataBase {
             return;
         }
         catch (Throwable $e) {
-            DebugLog::log('ActionXiqFleetData.fetchFail', ['error' => $e->getMessage()]);
             $this->respond([], 'down', $fleet->getRateLimitRemaining(), $fleet->getRateLimitReset());
             return;
         }
@@ -61,10 +58,6 @@ class ActionXiqFleetData extends ActionDataBase {
             $devices[] = self::shapeFleetRow($r);
         }
 
-        DebugLog::log('ActionXiqFleetData.return', [
-            'count'  => count($devices),
-            'source' => 'ok',
-        ]);
 
         $this->respond($devices, 'ok', $fleet->getRateLimitRemaining(), $fleet->getRateLimitReset());
     }

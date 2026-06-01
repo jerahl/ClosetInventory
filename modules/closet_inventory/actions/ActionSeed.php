@@ -48,11 +48,6 @@ class ActionSeed extends CController {
             ]));
         }
         catch (\Throwable $e) {
-            \Modules\ClosetInventory\Lib\DebugLog::log('ActionSeed.fatal', [
-                'msg'   => $e->getMessage(),
-                'file'  => $e->getFile() . ':' . $e->getLine(),
-                'trace' => array_slice(explode("\n", $e->getTraceAsString()), 0, 20)
-            ]);
             http_response_code(500);
             $this->setResponse(new CControllerResponseData([
                 'main_block' => json_encode(['ok' => false, 'error' => $e->getMessage()])

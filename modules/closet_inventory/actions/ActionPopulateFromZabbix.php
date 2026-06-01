@@ -6,7 +6,6 @@ use API;
 use CController;
 use CControllerResponseData;
 use CWebUser;
-use Modules\ClosetInventory\Lib\DebugLog;
 use Modules\ClosetInventory\Lib\InventoryStore;
 use Modules\ClosetInventory\Lib\SchoolMapper;
 use Throwable;
@@ -106,10 +105,6 @@ class ActionPopulateFromZabbix extends CController {
                         $excludedHostids[(string) $h['hostid']] = true;
                     }
                 }
-                DebugLog::log('ActionPopulateFromZabbix.excludedHostids', [
-                    'groupCount' => count($excludedGroupIds),
-                    'hostCount'  => count($excludedHostids)
-                ]);
             }
             catch (\Throwable $e) {
                 $report['errors'][] = 'exclude lookup failed: '.$e->getMessage();
@@ -141,7 +136,6 @@ class ActionPopulateFromZabbix extends CController {
             }
 
             $groups = SchoolMapper::fetchZbxGroupsByPrefix('Site/');
-            DebugLog::log('ActionPopulateFromZabbix.groups', ['count' => count($groups)]);
 
             foreach ($groups as $g) {
                 $groupName = (string) ($g['name']    ?? '');
@@ -187,10 +181,6 @@ class ActionPopulateFromZabbix extends CController {
                 }
                 catch (Throwable $e) {
                     $report['errors'][] = "host.get failed for group '$groupName': ".$e->getMessage();
-                    DebugLog::log('ActionPopulateFromZabbix.host.get.fail', [
-                        'group' => $groupName,
-                        'error' => $e->getMessage()
-                    ]);
                     continue;
                 }
 
@@ -251,10 +241,6 @@ class ActionPopulateFromZabbix extends CController {
             ]));
         }
         catch (Throwable $e) {
-            DebugLog::log('ActionPopulateFromZabbix.fatal', [
-                'msg'   => $e->getMessage(),
-                'file'  => $e->getFile().':'.$e->getLine()
-            ]);
             $this->setResponse(new CControllerResponseData([
                 'main_block' => json_encode([
                     'ok'    => false,
