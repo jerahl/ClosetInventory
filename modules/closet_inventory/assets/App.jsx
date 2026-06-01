@@ -15,6 +15,9 @@ async function apiGet(action, params) {
   try { return JSON.parse(text); } catch (e) { throw new Error("Bad JSON from " + action); }
 }
 
+// Expose for cross-file callers (Modals.jsx etc.) once Babel evaluates this file.
+window.apiGet = (...a) => apiGet(...a);
+
 async function apiPost(action, fields) {
   const fd = new FormData();
   fd.append("_csrf_token", BOOT.csrf_token || "");
@@ -29,6 +32,7 @@ async function apiPost(action, fields) {
   if (!body || body.ok !== true) throw new Error((body && body.error) || ("Save failed: " + action));
   return body;
 }
+window.apiPost = (...a) => apiPost(...a);
 
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "dark": true,
@@ -145,6 +149,24 @@ function App() {
   const current = route.uid != null ? closets.find((c) => c.uid === route.uid) : null;
   useEffect(() => { window.scrollTo(0, 0); }, [route.view, route.uid]);
 
+  // XIQ rate-limit banner — show once per session when the live data reports a
+  // rate-limited source or a "remaining" budget under 500. Track via a ref so a
+  // re-render of the detail page doesn't re-toast.
+  const xiqWarnedRef = useRef(false);
+  useEffect(() => {
+    if (xiqWarnedRef.current) return;
+    const live = (current && current._live) || null;
+    if (!live) return;
+    const rateLimited = live.sources && live.sources.xiq === "rate_limited";
+    const remaining = (typeof live.xiqRateLimitRemaining === "number") ? live.xiqRateLimitRemaining : null;
+    const low = rateLimited || (remaining !== null && remaining < 500);
+    if (!low) return;
+    xiqWarnedRef.current = true;
+    const id = Math.random();
+    setToasts((t) => [...t, { id, msg: "ExtremeCloud IQ rate limit low — some live data may be stale." }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 8000);
+  }, [current]);
+
   // ---- handlers ----
   const openCloset = (c) => { setRoute({ view: "detail", uid: c.uid }); setNavOpen(false); };
   const goList = () => setRoute({ view: "list", uid: null });
@@ -192,7 +214,9 @@ function App() {
         poe: sw.poe ? 1 : 0, uplinks: +sw.uplinks || 0,
         uplinkSpeed: sw.uplinkSpeed || "",
         mgmtIp: sw.mgmtIp || "", serial: sw.serial || "",
-        stack: +sw.stack || 1
+        stack: +sw.stack || 1,
+        xiqDeviceId: +sw.xiqDeviceId || 0,
+        zabbixHostid: sw.zabbixHostid || ""
       });
       toast("Switch added to " + c.code + ".");
       setModal(null);

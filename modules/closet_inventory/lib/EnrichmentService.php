@@ -5,6 +5,8 @@ namespace Modules\ClosetInventory\Lib;
 use API;
 use Throwable;
 
+// XIQ exception classes live inside XIQClient.php in this same namespace.
+
 /**
  * Read-through enrichment layer over the authored closet record.
  *
@@ -33,11 +35,54 @@ class EnrichmentService {
     /** Max problems surfaced per closet. */
     private const MAX_PROBLEMS = 10;
 
+    /** XIQ per-device cache TTL (seconds). */
+    private const TTL_XIQ_DEVICE = 300;
+
     private Cache $cache;
+
+    /** Lazy-built XIQ clients; null when no credentials are configured. */
+    private ?XIQClient $xiqClient = null;
+    private ?XIQFleetClient $xiqFleet = null;
+    private bool $xiqInitTried = false;
+    /** True once the current enrich() pass caught a 429. */
+    private bool $xiqRateLimitTripped = false;
 
     public function __construct(?Cache $cache = null) {
         // Cache is a static facade today; the param exists so tests can swap.
         $this->cache = $cache ?? new Cache();
+    }
+
+    /**
+     * Build the XIQ clients on first use. Token preferred, credentials are a
+     * fallback. Returns true when at least one client was constructed.
+     */
+    private function ensureXiqClients(): bool {
+        if ($this->xiqInitTried) {
+            return $this->xiqClient !== null;
+        }
+        $this->xiqInitTried = true;
+
+        try {
+            $token = Config::xiqToken();
+            if ($token !== null) {
+                $this->xiqClient = XIQClient::fromToken($token);
+                $this->xiqFleet  = XIQFleetClient::fromToken($token);
+                return true;
+            }
+            $creds = Config::xiqCredentials();
+            if ($creds !== null) {
+                $this->xiqClient = XIQClient::fromCredentials($creds['username'], $creds['password']);
+                // XIQFleetClient is token-only; with credentials we leave it
+                // null and the fleet endpoints will report "unconfigured".
+                return true;
+            }
+        }
+        catch (Throwable $e) {
+            DebugLog::log('Enrichment.xiq.initFailed', ['error' => $e->getMessage()]);
+            $this->xiqClient = null;
+            $this->xiqFleet  = null;
+        }
+        return $this->xiqClient !== null;
     }
 
     /**
@@ -81,6 +126,25 @@ class EnrichmentService {
 
         $closet['switches'] = $switches;
 
+        // -------- XIQ pass (wrapped — must never throw out of enrich()) ----
+        $xiqResult = [
+            'configured'   => false,
+            'any_success'  => false,
+            'any_failure'  => false,
+            'rate_limited' => false,
+            'remaining'    => null,
+            'warnings'     => []
+        ];
+        try {
+            $xiqResult = $this->runXiqPass($switches);
+            $closet['switches'] = $switches; // mergeXiqInto wrote by-ref via runXiqPass
+        }
+        catch (Throwable $e) {
+            DebugLog::log('Enrichment.xiq.fatal', ['error' => $e->getMessage()]);
+            $xiqResult['any_failure'] = true;
+            $xiqResult['warnings'][]  = 'xiq fatal: '.$e->getMessage();
+        }
+
         // Recompute closet-level counters from the (possibly updated) switch
         // rows so the design's port totals reflect the live numbers.
         $portsTotal = 0;
@@ -107,14 +171,35 @@ class EnrichmentService {
             $sources['zabbix'] = 'down';
         }
 
-        // XIQ / rConfig stay where they were (phase 1 emits "unconfigured").
-        $sources['xiq']      = $sources['xiq']      ?? 'unconfigured';
+        // XIQ source aggregation from runXiqPass().
+        if ($xiqResult['rate_limited']) {
+            $sources['xiq'] = 'rate_limited';
+        }
+        elseif (!$xiqResult['configured']) {
+            $sources['xiq'] = 'unconfigured';
+        }
+        elseif ($xiqResult['any_success']) {
+            $sources['xiq'] = 'ok';
+        }
+        elseif ($xiqResult['any_failure']) {
+            $sources['xiq'] = 'down';
+        }
+        else {
+            $sources['xiq'] = 'unconfigured';
+        }
+
+        // rConfig still untouched in Phase 3.
         $sources['rconfig']  = $sources['rconfig']  ?? 'unconfigured';
 
         $live['sources'] = $sources;
-        $live['xiqRateLimitRemaining'] = $live['xiqRateLimitRemaining'] ?? null;
-        if ($warnings !== []) {
-            $live['warnings'] = $warnings;
+        $live['xiqRateLimitRemaining'] = $xiqResult['remaining'];
+
+        $allWarnings = $warnings;
+        if (!empty($xiqResult['warnings'])) {
+            $allWarnings = array_merge($allWarnings, $xiqResult['warnings']);
+        }
+        if ($allWarnings !== []) {
+            $live['warnings'] = $allWarnings;
         }
 
         // Active problems for the closet's mapped switches.
@@ -329,5 +414,177 @@ class EnrichmentService {
             'otherfault' => 'OtherFault',
             default      => ucfirst($dominant)
         };
+    }
+
+    /**
+     * XIQ enrichment pass. Mutates the supplied $switches array in-place;
+     * returns a result envelope so enrich() can assemble _live.sources.xiq.
+     *
+     * @param array<int, array<string, mixed>> $switches  passed by reference
+     * @return array{configured:bool,any_success:bool,any_failure:bool,rate_limited:bool,remaining:?int,warnings:array<int,string>}
+     */
+    private function runXiqPass(array &$switches): array {
+        $out = [
+            'configured'   => false,
+            'any_success'  => false,
+            'any_failure'  => false,
+            'rate_limited' => false,
+            'remaining'    => null,
+            'warnings'     => []
+        ];
+
+        // Count switches that have an XIQ device id.
+        $eligible = 0;
+        foreach ($switches as $sw) {
+            $id = (int) ($sw['xiqDeviceId'] ?? $sw['xiq_device_id'] ?? 0);
+            if ($id > 0) {
+                $eligible++;
+            }
+        }
+        DebugLog::log('Enrichment.xiq.start', ['switchesWithXiqId' => $eligible]);
+
+        if ($eligible === 0) {
+            return $out;
+        }
+
+        if (!$this->ensureXiqClients() || $this->xiqClient === null) {
+            // Configured-ish (the switches have xiq ids) but no creds; treat as
+            // unconfigured at the source level.
+            return $out;
+        }
+
+        $out['configured'] = true;
+        $this->xiqRateLimitTripped = false;
+
+        foreach ($switches as $i => $sw) {
+            if ($this->xiqRateLimitTripped) {
+                break;
+            }
+            $id = (int) ($sw['xiqDeviceId'] ?? $sw['xiq_device_id'] ?? 0);
+            if ($id <= 0) continue;
+
+            try {
+                $this->mergeXiqInto($switches[$i]);
+                if (!empty($switches[$i]['_xiqMergedOk'])) {
+                    $out['any_success'] = true;
+                    unset($switches[$i]['_xiqMergedOk']);
+                }
+                else {
+                    // mergeXiqInto sets _xiqMergedOk on a clean call. Absent
+                    // means the call threw and was caught inside.
+                    if (!empty($switches[$i]['_xiqFailed'])) {
+                        $out['any_failure'] = true;
+                        $out['warnings'][]  = 'xiq:device:'.$id.' '.((string) ($switches[$i]['_xiqFailReason'] ?? 'down'));
+                        unset($switches[$i]['_xiqFailed'], $switches[$i]['_xiqFailReason']);
+                    }
+                    if (!empty($switches[$i]['_xiqRateLimited'])) {
+                        $out['rate_limited'] = true;
+                        $this->xiqRateLimitTripped = true;
+                        unset($switches[$i]['_xiqRateLimited']);
+                    }
+                }
+            }
+            catch (Throwable $e) {
+                // Defensive — mergeXiqInto should not throw.
+                $out['any_failure'] = true;
+                $out['warnings'][]  = 'xiq:device:'.$id.' '.$e->getMessage();
+                DebugLog::log('Enrichment.xiq.deviceFail', ['id' => $id, 'error' => $e->getMessage()]);
+            }
+        }
+
+        if ($this->xiqClient !== null) {
+            try {
+                $out['remaining'] = $this->xiqClient->getRateLimitRemaining();
+            }
+            catch (Throwable $e) {
+                $out['remaining'] = null;
+            }
+            DebugLog::log('Enrichment.xiq.rateLimit', ['remaining' => $out['remaining']]);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Merge XIQ device data onto a single switch row. Fills blanks only;
+     * never overwrites authored, non-empty values.
+     *
+     * Internal signaling (consumed and stripped by runXiqPass):
+     *   _xiqMergedOk     bool — call succeeded; some fields may have been set.
+     *   _xiqFailed       bool — call threw (non-rate-limit).
+     *   _xiqFailReason   string
+     *   _xiqRateLimited  bool — 429 was caught.
+     *
+     * @param array<string, mixed> $switch by-reference
+     */
+    private function mergeXiqInto(array &$switch): void {
+        $id = (int) ($switch['xiqDeviceId'] ?? $switch['xiq_device_id'] ?? 0);
+        if ($id <= 0) {
+            return;
+        }
+        if ($this->xiqClient === null) {
+            return;
+        }
+
+        $cacheKey = 'closet_inv:xiq_device:'.$id;
+        $device   = null;
+
+        $hit = Cache::get($cacheKey);
+        if ($hit !== null) {
+            $decoded = @unserialize($hit, ['allowed_classes' => false]);
+            if (is_array($decoded)) {
+                $device = $decoded;
+            }
+        }
+
+        if ($device === null) {
+            try {
+                $device = $this->xiqClient->getDevice($id);
+                Cache::set($cacheKey, serialize($device), self::TTL_XIQ_DEVICE);
+            }
+            catch (XIQRateLimitException $e) {
+                $switch['_xiqRateLimited'] = true;
+                DebugLog::log('Enrichment.xiq.rateLimited', ['id' => $id]);
+                return;
+            }
+            catch (Throwable $e) {
+                $switch['_xiqFailed']     = true;
+                $switch['_xiqFailReason'] = $e->getMessage();
+                DebugLog::log('Enrichment.xiq.getDeviceFail', ['id' => $id, 'error' => $e->getMessage()]);
+                return;
+            }
+        }
+
+        // Fill blanks only. Helper preserves any non-empty authored string/int.
+        $fillIfBlank = function (string $key, $newValue) use (&$switch): bool {
+            if ($newValue === null || $newValue === '' || $newValue === 0) {
+                return false;
+            }
+            $cur = $switch[$key] ?? null;
+            if ($cur === null || $cur === '' || $cur === 0) {
+                $switch[$key] = $newValue;
+                return true;
+            }
+            return false;
+        };
+
+        $filled = [];
+        if ($fillIfBlank('model',  (string) ($device['model']   ?? ''))) $filled[] = 'model';
+        if ($fillIfBlank('serial', (string) ($device['serial']  ?? ''))) $filled[] = 'serial';
+        if ($fillIfBlank('mgmtIp', (string) ($device['ip']      ?? ''))) $filled[] = 'mgmtIp';
+
+        // New live-only fields. These always reflect XIQ state, not authored
+        // data, so we set them unconditionally when the XIQ call succeeded.
+        $switch['xiqConnected'] = (bool) ($device['connected'] ?? false);
+        $lastConnect = (int) ($device['last_connect'] ?? 0);
+        $switch['xiqLastSeen']  = $lastConnect > 0 ? gmdate('c', $lastConnect) : null;
+        $switch['xiqSoftware']  = (string) ($device['firmware'] ?? '') ?: null;
+
+        $switch['_xiqMergedOk'] = true;
+        DebugLog::log('Enrichment.xiq.deviceMerged', [
+            'id'        => $id,
+            'filled'    => $filled,
+            'connected' => $switch['xiqConnected'],
+        ]);
     }
 }

@@ -3,17 +3,23 @@
 function SwitchRow({ s, zabbixSource }) {
   const pct = Math.round((s.used / s.ports) * 100);
   const hasHost = s.zabbixHostid != null && s.zabbixHostid !== "";
+  const hasXiq  = s.xiqDeviceId != null && +s.xiqDeviceId > 0;
   // Live chip logic: drop the "pending" chip entirely once the closet is
   // pulling live Zabbix data for this switch. Show distinct chips for
   // "not mapped" (authored field missing) and "Zabbix unreachable" (mapped
   // but the snapshot failed) so operators can tell the cases apart.
   let liveChip = null;
   if (!hasHost) {
+    const txt = hasXiq
+      ? "Live data: not mapped to a Zabbix host"
+      : "Live data: not mapped to Zabbix or XIQ";
     liveChip = React.createElement("span", {
       className: "uplink-tag",
-      title: "Map this switch to a Zabbix host id to enable live data.",
+      title: hasXiq
+        ? "Map this switch to a Zabbix host id to enable port/PoE/problem data."
+        : "Map this switch to a Zabbix host id and an XIQ device id to enable live data.",
       style: { background: "var(--surface-2)", color: "var(--muted)", borderColor: "var(--border)" }
-    }, "Live data: not mapped to a Zabbix host");
+    }, txt);
   } else if (zabbixSource === "down") {
     liveChip = React.createElement("span", {
       className: "uplink-tag",
@@ -32,9 +38,18 @@ function SwitchRow({ s, zabbixSource }) {
           title: "Live PoE status from Zabbix",
           style: { background: "var(--teal-soft)", color: "var(--teal)", borderColor: "color-mix(in oklch, var(--teal) 25%, transparent)" }
         }, s.poeStatus),
+        (s.xiqConnected !== undefined) && React.createElement("span", {
+          className: "uplink-tag",
+          title: s.xiqLastSeen ? ("Last seen by XIQ: " + s.xiqLastSeen) : "Reachability from ExtremeCloud IQ",
+          style: s.xiqConnected
+            ? { background: "var(--teal-soft)", color: "var(--teal)", borderColor: "color-mix(in oklch, var(--teal) 25%, transparent)" }
+            : { background: "var(--surface-2)", color: "var(--muted)", borderColor: "var(--border)" }
+        }, s.xiqConnected ? "XIQ: online" : "XIQ: offline"),
         liveChip
       ),
-      React.createElement("div", { className: "swrow__model" }, `${s.vendor} ${s.model}`),
+      React.createElement("div", { className: "swrow__model" }, `${s.vendor} ${s.model}`,
+        s.xiqSoftware && React.createElement("span", { className: "muted", style: { marginLeft: 8, fontSize: 11.5 } }, "· " + s.xiqSoftware)
+      ),
       React.createElement("div", { className: "swrow__specs" },
         React.createElement("div", { className: "spec", style: { minWidth: 130 } },
           React.createElement("div", { className: "spec__k" }, "Port usage"),

@@ -40,7 +40,9 @@ class ActionSwitchSave extends CController {
             'uplinkSpeed' => 'string',
             'mgmtIp'      => 'string',
             'serial'      => 'string',
-            'stack'       => 'int32'
+            'stack'       => 'int32',
+            'zabbixHostid'=> 'string',
+            'xiqDeviceId' => 'int32'
         ];
         $ok = $this->validateInput($fields);
         if (!$ok) {
@@ -68,6 +70,17 @@ class ActionSwitchSave extends CController {
                 'serial'      => (string) $this->getInput('serial', ''),
                 'stack'       => (int)    $this->getInput('stack', 1)
             ];
+
+            // External keys: pass null when missing/empty/zero so the DB stores
+            // NULL instead of an empty-string or 0 sentinel.
+            if ($this->hasInput('zabbixHostid')) {
+                $z = trim((string) $this->getInput('zabbixHostid', ''));
+                $payload['zabbixHostid'] = $z !== '' ? $z : null;
+            }
+            if ($this->hasInput('xiqDeviceId')) {
+                $x = (int) $this->getInput('xiqDeviceId', 0);
+                $payload['xiqDeviceId'] = $x > 0 ? $x : null;
+            }
 
             $store = new InventoryStore();
             $newId = $store->saveSwitch($closetUid, $payload, ($id !== null && $id > 0) ? $id : null);

@@ -57,6 +57,14 @@
         "closet.counters.refresh": {
             "class": "ActionCountersRefresh",
             "layout": "layout.json"
+        },
+        "closet.xiq.fleet.data": {
+            "class": "ActionXiqFleetData",
+            "layout": "layout.json"
+        },
+        "closet.xiq.device.data": {
+            "class": "ActionXiqDeviceData",
+            "layout": "layout.json"
         }
     }
 }

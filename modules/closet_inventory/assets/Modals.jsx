@@ -82,8 +82,77 @@ function SwitchFormModal({ closet, onClose, onSave }) {
   const [f, setF] = React.useState({
     name: `${closet.schoolId}-${closet.type}-SW${closet.switches.length + 1}`,
     model: models[0], ports: 48, used: 0, uplinks: 1, uplinkSpeed: "10G SFP+", mgmtIp: "", serial: "", stack: 1, poe: true,
+    xiqDeviceId: "", zabbixHostid: "",
   });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+
+  // Lookup section state.
+  const [lookup, setLookup] = React.useState("");
+  const [hint, setHint]     = React.useState(null); // { kind: "ok"|"warn"|"err", text }
+  const [busy, setBusy]     = React.useState(false);
+
+  const doFind = async () => {
+    const q = lookup.trim();
+    const idTyped = f.xiqDeviceId && +f.xiqDeviceId > 0 ? +f.xiqDeviceId : 0;
+    if (!q && !idTyped) { setHint({ kind: "warn", text: "Enter a hostname, MAC, serial, or XIQ device id first." }); return; }
+    if (!window.apiGet) { setHint({ kind: "err", text: "Lookup not yet ready — try again in a moment." }); return; }
+
+    // Build query: prefer explicit XIQ id when present; otherwise classify the
+    // free-text input. A 12+ hex run (with/without separators) is a MAC; a
+    // pure integer is an id; everything else is treated as hostname, with a
+    // serial fallback on no match.
+    let params = null;
+    if (idTyped > 0) {
+      params = { id: idTyped };
+    } else if (/^\d+$/.test(q)) {
+      params = { id: +q };
+    } else if (/^[0-9A-Fa-f:.\-]{12,}$/.test(q) && (q.replace(/[^0-9A-Fa-f]/g, "").length === 12)) {
+      params = { mac: q };
+    } else {
+      params = { hostname: q };
+    }
+
+    setBusy(true);
+    setHint(null);
+    try {
+      let body = await window.apiGet("closet.xiq.device.data", params);
+      // If hostname search came up empty, try serial as a fallback.
+      if (body && body.ok && !body.device && params.hostname) {
+        body = await window.apiGet("closet.xiq.device.data", { serial: q });
+      }
+      if (!body || !body.ok) { setHint({ kind: "err", text: "Lookup failed." }); return; }
+      if (body.source === "unconfigured") { setHint({ kind: "warn", text: "XIQ not configured (set {$XIQ.API_TOKEN})." }); return; }
+      if (body.source === "rate_limited") { setHint({ kind: "warn", text: "XIQ rate limit reached — try again shortly." }); return; }
+      if (body.source === "down")         { setHint({ kind: "err",  text: "XIQ unreachable." }); return; }
+      const d = body.device;
+      if (!d) { setHint({ kind: "warn", text: "No matching XIQ device." }); return; }
+
+      // Fill blanks only — never overwrite operator-typed values.
+      setF((prev) => {
+        const next = { ...prev };
+        const fillIfBlank = (k, v) => { if (v && (next[k] === undefined || next[k] === null || next[k] === "" || next[k] === 0)) next[k] = v; };
+        fillIfBlank("model",  d.model);
+        fillIfBlank("serial", d.serial);
+        fillIfBlank("mgmtIp", d.mgmtIp);
+        // External keys: always adopt when we matched.
+        if (d.id) next.xiqDeviceId = d.id;
+        if (d.zabbixHostidGuess && !next.zabbixHostid) next.zabbixHostid = d.zabbixHostidGuess;
+        return next;
+      });
+      setHint({ kind: "ok", text: "matched: " + (d.hostname || ("id " + d.id)) });
+    } catch (e) {
+      setHint({ kind: "err", text: e.message || "Lookup error." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const hintColor = hint
+    ? (hint.kind === "ok"  ? "var(--teal)"
+    :  hint.kind === "warn" ? "var(--amber)"
+    :  /* err */              "var(--red, #c44)")
+    : null;
+
   return React.createElement(Modal, {
     title: "Add switch",
     sub: "to " + closet.code,
@@ -93,10 +162,35 @@ function SwitchFormModal({ closet, onClose, onSave }) {
       React.createElement("button", { className: "btn", onClick: onClose }, "Cancel"),
       React.createElement("button", { className: "btn btn--primary", onClick: () => {
         const [vendor, ...rest] = f.model.split(" ");
-        onSave({ ...f, vendor, model: rest.join(" "), ports: +f.ports, used: +f.used, uplinks: +f.uplinks, stack: +f.stack });
+        onSave({
+          ...f,
+          vendor, model: rest.join(" "),
+          ports: +f.ports, used: +f.used, uplinks: +f.uplinks, stack: +f.stack,
+          xiqDeviceId: +f.xiqDeviceId || 0,
+          zabbixHostid: f.zabbixHostid || ""
+        });
       } }, React.createElement(Ic.Check, null), "Add switch")
     ),
   },
+    // -------- Lookup subsection --------
+    React.createElement("div", {
+      className: "field__label",
+      style: { fontSize: 12, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--faint)", margin: "4px 0 8px" }
+    }, "Lookup (optional autofill)"),
+    React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "end" } },
+      React.createElement(Field, { label: "Hostname / MAC / serial", hint: "Pulls model, serial, mgmt IP from ExtremeCloud IQ." },
+        React.createElement("input", { className: "input mono", value: lookup, onChange: (e) => setLookup(e.target.value), placeholder: "RHS-IDF-SW1 or aa:bb:cc:dd:ee:ff", onKeyDown: (e) => { if (e.key === "Enter") { e.preventDefault(); doFind(); } } })),
+      React.createElement("button", { className: "btn", disabled: busy, style: { height: 38 }, onClick: doFind },
+        React.createElement(Ic.Search || Ic.Check, null), busy ? "Searching…" : "Find")
+    ),
+    React.createElement("div", { className: "field-row" },
+      React.createElement(Field, { label: "XIQ device ID", hint: "Numeric XIQ id (autofilled by Find)." },
+        React.createElement("input", { className: "input mono", value: f.xiqDeviceId, onChange: (e) => set("xiqDeviceId", e.target.value.replace(/[^0-9]/g, "")), placeholder: "1234567" })),
+      React.createElement(Field, { label: "Zabbix host id", hint: "Numeric Zabbix hostid (autofilled when one matches)." },
+        React.createElement("input", { className: "input mono", value: f.zabbixHostid, onChange: (e) => set("zabbixHostid", e.target.value.replace(/[^0-9]/g, "")), placeholder: "12345" }))
+    ),
+    hint && React.createElement("div", { style: { fontSize: 12.5, color: hintColor, margin: "-4px 0 12px" } }, hint.text),
+    // -------- Standard fields --------
     React.createElement("div", { className: "field-row" },
       React.createElement(Field, { label: "Name / hostname", req: true },
         React.createElement("input", { className: "input mono", value: f.name, onChange: (e) => set("name", e.target.value) })),

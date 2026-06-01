@@ -265,9 +265,12 @@ class InventoryStore {
             'mgmt_ip'           => (string) ($p['mgmtIp']  ?? ''),
             'serial'            => (string) ($p['serial']  ?? ''),
             'stack_size'        => (int)    ($p['stack']   ?? 1),
-            'zabbix_hostid'     => isset($p['zabbixHostid'])    ? (string) $p['zabbixHostid']    : null,
-            'xiq_device_id'     => isset($p['xiqDeviceId'])     ? (int)    $p['xiqDeviceId']    : null,
-            'rconfig_device_id' => isset($p['rconfigDeviceId']) ? (int)    $p['rconfigDeviceId'] : null
+            // External keys: array_key_exists + null-preserving so callers can
+            // explicitly NULL a column (a 0 / "" coming in from the form is
+            // already coerced to null by the action layer).
+            'zabbix_hostid'     => (array_key_exists('zabbixHostid', $p)    && $p['zabbixHostid']    !== null && $p['zabbixHostid']    !== '') ? (string) $p['zabbixHostid']    : null,
+            'xiq_device_id'     => (array_key_exists('xiqDeviceId', $p)     && $p['xiqDeviceId']     !== null && (int) $p['xiqDeviceId']     > 0) ? (int) $p['xiqDeviceId']     : null,
+            'rconfig_device_id' => (array_key_exists('rconfigDeviceId', $p) && $p['rconfigDeviceId'] !== null && (int) $p['rconfigDeviceId'] > 0) ? (int) $p['rconfigDeviceId'] : null
         ];
 
         if ($id !== null && $id > 0) {
