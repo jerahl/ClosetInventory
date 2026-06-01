@@ -62,15 +62,43 @@ class ActionPopulateFromZabbix extends CController {
                 'switchesCreated' => 0,
                 'hostsScanned'    => 0,
                 'skipped'         => [],
+                'removed'         => [],
                 'errors'          => []
             ];
 
             $groups = SchoolMapper::fetchZbxGroupsByPrefix('Site/');
             DebugLog::log('ActionPopulateFromZabbix.groups', ['count' => count($groups)]);
 
-            // Non-school Site/* groups that should be skipped on import.
+            // Non-school Site/* groups that should be skipped on import — and
+            // actively cleaned up if a previous run had already imported them.
             // Lower-cased comparison so 'Site/Wireless' and 'site/wireless' both match.
             $excludedSuffixes = ['wireless', 'video'];
+
+            // Cleanup pass: remove any previously-imported schools whose
+            // zbx_group matches an excluded group. Cascade through dependent
+            // rows (closets, switches, power, circuits, maintenance, photos).
+            $existingSchools = $store->listSchools();
+            foreach ($existingSchools as $s) {
+                $zg = (string) ($s['zbx_group'] ?? $s['zbxGroup'] ?? '');
+                if ($zg === '' || !str_starts_with($zg, 'Site/')) {
+                    continue;
+                }
+                $sfx = strtolower(trim(substr($zg, strlen('Site/'))));
+                if (in_array($sfx, $excludedSuffixes, true)) {
+                    try {
+                        $removed = $store->removeSchool((string) $s['id']);
+                        $report['removed'][] = [
+                            'schoolId' => (string) $s['id'],
+                            'zbxGroup' => $zg,
+                            'closets'  => $removed['closets'],
+                            'switches' => $removed['switches']
+                        ];
+                    }
+                    catch (\Throwable $e) {
+                        $report['errors'][] = "cleanup failed for school '".$s['id']."': ".$e->getMessage();
+                    }
+                }
+            }
 
             foreach ($groups as $g) {
                 $groupName = (string) ($g['name']    ?? '');

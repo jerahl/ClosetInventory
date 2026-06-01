@@ -710,6 +710,54 @@ class InventoryStore {
         ], ['uid' => $closetUid]);
     }
 
+    /**
+     * Delete a school and every dependent row (closets, switches, power_units,
+     * circuits, maintenance, photos). Manual cascade because the schema's
+     * FKs don't declare ON DELETE CASCADE. Returns the counts removed so the
+     * caller can report them.
+     *
+     * Use with care — this removes authored data (maintenance notes, photos,
+     * flag history) along with the auto-imported rows. Only used by the
+     * populate action's cleanup pass for non-school Site/* groups.
+     *
+     * @return array{closets:int, switches:int, school:bool}
+     */
+    public function removeSchool(string $id): array {
+        $id = trim($id);
+        if ($id === '') {
+            return ['closets' => 0, 'switches' => 0, 'school' => false];
+        }
+
+        $closetUids = [];
+        $rs = \DBselect('SELECT uid FROM tcs_closet_closets WHERE school_id='.\zbx_dbstr($id));
+        while ($r = \DBfetch($rs)) {
+            $closetUids[] = (int) $r['uid'];
+        }
+
+        $switchCount = 0;
+        if (!empty($closetUids)) {
+            $list = implode(',', $closetUids);
+            $sr = \DBselect('SELECT COUNT(*) AS n FROM tcs_closet_switches WHERE closet_uid IN ('.$list.')');
+            $sn = \DBfetch($sr);
+            $switchCount = $sn !== false ? (int) $sn['n'] : 0;
+
+            \DBexecute('DELETE FROM tcs_closet_switches    WHERE closet_uid IN ('.$list.')');
+            \DBexecute('DELETE FROM tcs_closet_power_units WHERE closet_uid IN ('.$list.')');
+            \DBexecute('DELETE FROM tcs_closet_circuits    WHERE closet_uid IN ('.$list.')');
+            \DBexecute('DELETE FROM tcs_closet_maintenance WHERE closet_uid IN ('.$list.')');
+            \DBexecute('DELETE FROM tcs_closet_photos      WHERE closet_uid IN ('.$list.')');
+            \DBexecute('DELETE FROM tcs_closet_closets     WHERE uid       IN ('.$list.')');
+        }
+
+        \DBexecute('DELETE FROM tcs_closet_schools WHERE id='.\zbx_dbstr($id));
+
+        return [
+            'closets'  => count($closetUids),
+            'switches' => $switchCount,
+            'school'   => true
+        ];
+    }
+
     public function audit(string $action, string $target, string $result): void {
         try {
             $this->dbInsert('tcs_closet_audit', [
