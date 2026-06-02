@@ -39,7 +39,7 @@ class Module extends CModule {
             return;
         }
 
-        $monitoring = $main_menu->find(_('Monitoring'));
+        $monitoring = $main_menu->find(_('Inventory'));
         if ($monitoring === null) {
             return;
         }
