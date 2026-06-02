@@ -203,18 +203,15 @@ class ActionPopulateFromZabbix extends CController {
                     $parsed = self::parseHostname($technical, $schoolId);
                     $switchName = $parsed['switchName'];
                     $closetType = $parsed['closetType'];
+                    // Closet code is the closet portion of the switch name:
+                    // 'TCTA-IDF-203-SW1' → 'TCTA-IDF-203'. The school is
+                    // always taken from the Zabbix host group membership
+                    // ($schoolId), independent of the hostname's prefix —
+                    // hostnames like TMS-MDF-SW1 inside Site/TASPA stay named
+                    // TMS-MDF but get filed under TASPA.
+                    $closetCode = $parsed['closetCode'];
 
-                    // School is ALWAYS the one from the Zabbix host group. The
-                    // hostname's prefix is just a label — hosts named
-                    // 'TMS-MDF-SW1' living in Site/TASPA belong to TASPA.
-                    // Rebuild the closet code from the group's schoolId so the
-                    // UI doesn't display the misleading hostname prefix.
-                    $closetCode = $schoolId.'-'.$closetType;
-                    if (!empty($parsed['roomId'])) {
-                        $closetCode .= '-'.$parsed['roomId'];
-                    }
-
-                    if ($switchName === '') {
+                    if ($closetCode === '' || $switchName === '') {
                         $report['errors'][] = "could not parse hostname '$technical'";
                         continue;
                     }
@@ -263,19 +260,26 @@ class ActionPopulateFromZabbix extends CController {
      * Parse a switch hostname into a (closet_code, switch_name, closet_type)
      * tuple. See class docblock for the grammar.
      *
-     * @return array{switchName:string, closetType:string, roomId:string}
+     * Splits a switch hostname into:
+     *   - closetCode: the closet portion of the name (full hostname minus
+     *     the trailing SW#/CORE/EDGE/etc suffix).
+     *   - switchName: the original hostname unchanged.
+     *   - closetType: MDF or IDF, from the matching token, defaulting to IDF.
+     *   - roomId: segments between the type token and the trailing suffix
+     *     (e.g. '203' for TCTA-IDF-203-SW1). Useful when the consumer wants
+     *     just the room portion without the prefix.
+     *
+     * @return array{closetCode:string, switchName:string, closetType:string, roomId:string}
      */
     public static function parseHostname(string $hostname, string $schoolId): array {
         $hostname = trim($hostname);
         if ($hostname === '') {
-            return ['switchName' => '', 'closetType' => 'IDF', 'roomId' => ''];
+            return ['closetCode' => '', 'switchName' => '', 'closetType' => 'IDF', 'roomId' => ''];
         }
 
         $parts = explode('-', $hostname);
         $n = count($parts);
 
-        // Find the MDF/IDF token's position so we can extract the room id
-        // segments that follow it. Default to IDF when absent.
         $closetType = 'IDF';
         $typeIdx    = -1;
         foreach ($parts as $i => $p) {
@@ -289,14 +293,19 @@ class ActionPopulateFromZabbix extends CController {
         $last    = strtoupper((string) $parts[$lastIdx]);
         $hasSuffix = (preg_match('/^SW\d+$/i', $last) === 1)
                   || in_array($last, self::SWITCH_SUFFIXES, true);
-        $roomEnd = $hasSuffix ? $lastIdx - 1 : $lastIdx;
 
+        $roomEnd = $hasSuffix ? $lastIdx - 1 : $lastIdx;
         $roomId = '';
         if ($typeIdx >= 0 && $roomEnd > $typeIdx) {
             $roomId = implode('-', array_slice($parts, $typeIdx + 1, $roomEnd - $typeIdx));
         }
 
+        $closetCode = ($hasSuffix && $n >= 2)
+            ? implode('-', array_slice($parts, 0, $lastIdx))
+            : $hostname;
+
         return [
+            'closetCode' => $closetCode,
             'switchName' => $hostname,
             'closetType' => $closetType,
             'roomId'     => $roomId
