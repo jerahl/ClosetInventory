@@ -415,6 +415,25 @@ class EnrichmentService {
      * @param array<string, mixed> $sw
      * @return array{ok:bool, sw:array<string, mixed>, warning?:string}
      */
+    /**
+     * Collapse Zabbix's `os_full` (often a 70+ char build-string tail like
+     * 'Windows Server 2019 Standard 17763.1.amd64fre.rs5_release.180914-1434
+     * Build 17763.8146') to the part operators actually want to see.
+     * Generic enough to leave anything we don't recognise untouched and
+     * length-capped so a Linux uname spew can't blow up the chip either.
+     */
+    private static function shortOsLabel(string $full): string {
+        // Windows Server <year> [<edition>] — trim everything after the edition.
+        if (preg_match('/^(Windows(?: Server)?(?: \d+)?(?:\s+(?:Standard|Datacenter|Enterprise|Essentials|Core))?)/i', $full, $m)) {
+            return trim($m[1]);
+        }
+        // Linux: take the first segment up to a comma or the build tail
+        // ("Linux 5.14.0-...", "Ubuntu 22.04.3 LTS ...").
+        $first = preg_split('/\s+(?:Build|build|\#|on)\s+/', $full)[0] ?? $full;
+        $first = (string) (preg_split('/[,;]/', $first)[0] ?? $first);
+        return strlen($first) > 48 ? substr($first, 0, 45).'...' : $first;
+    }
+
     private function mergeServerInventory(array $sw, string $hostid): array {
         $cacheKey = 'closet_inv:server_inv:'.$hostid;
         $inv = null;
@@ -450,7 +469,7 @@ class EnrichmentService {
 
         $osLabel = trim((string) ($inv['os_full'] ?? '')) ?: trim((string) ($inv['os'] ?? ''));
         if ($osLabel !== '') {
-            $sw['osLabel'] = $osLabel;
+            $sw['osLabel'] = self::shortOsLabel($osLabel);
         }
         $serial = trim((string) ($inv['serialno_a'] ?? ''));
         if ($serial !== '' && (string) ($sw['serial'] ?? '') === '') {

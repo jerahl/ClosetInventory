@@ -424,7 +424,12 @@ input, select, textarea { font-family: inherit; }
 .spec { min-width: 0; }
 .spec__k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 600; }
 .spec__v { font-size: 13px; font-weight: 600; margin-top: 2px; font-family: var(--font-mono); }
-.uplink-tag { font-size: 11px; font-weight: 700; color: var(--primary-700); background: var(--primary-soft); border: 1px solid var(--primary-line); padding: 1px 7px; border-radius: 6px; }
+.uplink-tag { font-size: 11px; font-weight: 700; color: var(--primary-700); background: var(--primary-soft); border: 1px solid var(--primary-line); padding: 1px 7px; border-radius: 6px; display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+@media (max-width: 860px) {
+  /* Hard cap on phones so a chatty osLabel ('Windows Server 2019 ...
+     17763.8146') can't blow the row width past the viewport. */
+  .uplink-tag { max-width: 220px; }
+}
 
 /* power */
 .pwr-gauge { display: flex; align-items: center; gap: 16px; padding: 4px 0 14px; }
