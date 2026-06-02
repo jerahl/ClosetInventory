@@ -404,8 +404,7 @@ function MaintFormModal({ closet, onClose, onSave }) {
     React.createElement(Field, { label: "Notes", req: true },
       React.createElement("textarea", { className: "textarea", value: f.notes, onChange: (e) => set("notes", e.target.value), placeholder: "What was done\u2026", autoFocus: true })),
     React.createElement(Field, { label: "Technician" },
-      React.createElement("select", { value: f.tech, onChange: (e) => set("tech", e.target.value) },
-        ["J. Whitfield", "M. Alvarez", "D. Carter", "S. Nguyen", "R. Patel", "T. Brooks", "K. Owens", "L. Sanders"].map((t) => React.createElement("option", { key: t }, t))))
+      React.createElement("input", { className: "input mono", disabled: true, value: f.tech || "(unknown user)", style: { color: "var(--muted)", background: "var(--surface-2)" } }))
   );
 }
 
