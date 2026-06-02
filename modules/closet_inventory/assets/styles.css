@@ -363,7 +363,7 @@ input, select, textarea { font-family: inherit; }
 .mini-stat__v small { font-weight: 500; color: var(--muted); font-size: 11.5px; }
 
 /* ---------- Stat strip ---------- */
-.stat-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 22px; }
+.stat-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 22px; }
 .stat {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
   padding: 16px 18px; box-shadow: var(--shadow-sm); position: relative; overflow: hidden;
@@ -400,7 +400,7 @@ input, select, textarea { font-family: inherit; }
 .banner-flag .b-meta { color: var(--text-2); }
 .banner-flag .b-resolve { margin-left: auto; }
 
-.detail-grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 18px; align-items: start; }
+.detail-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 18px; align-items: start; }
 
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden; margin-bottom: 18px; }
 .panel__head { display: flex; align-items: center; gap: 10px; padding: 15px 18px; border-bottom: 1px solid var(--border); }
@@ -566,8 +566,8 @@ input, select, textarea { font-family: inherit; }
 /* ---------- Mobile / tablet ---------- */
 .scrim-nav { display: none; }
 @media (max-width: 1040px) {
-  .detail-grid { grid-template-columns: 1fr; }
-  .stat-strip { grid-template-columns: repeat(2, 1fr); }
+  .detail-grid { grid-template-columns: minmax(0, 1fr); }
+  .stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 860px) {
   :root { --sidebar-w: 0px; }
@@ -612,7 +612,7 @@ input, select, textarea { font-family: inherit; }
   .modal input, .modal select, .modal textarea { font-size: 16px; }
 }
 @media (max-width: 560px) {
-  .stat-strip { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat-strip { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
   .field-row, .field-row--3 { grid-template-columns: 1fr; }
   .detail-head__actions { width: 100%; }
   .page-head__actions { width: 100%; }
