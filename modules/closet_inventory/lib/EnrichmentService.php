@@ -237,8 +237,17 @@ class EnrichmentService {
         elseif ($anySuccess) {
             $sources['zabbix'] = 'ok';
         }
-        else {
+        elseif ($anyFailure) {
+            // At least one switch's snapshot was attempted and threw — that's
+            // the real "Zabbix unreachable" signal.
             $sources['zabbix'] = 'down';
+        }
+        else {
+            // Mapped devices exist but none of them were switches we tried to
+            // snapshot (e.g. closets that contain only servers / 'other'
+            // devices). A failed server-inventory merge is a soft warning, not
+            // a Zabbix-down condition.
+            $sources['zabbix'] = 'unconfigured';
         }
 
         // XIQ source aggregation from runXiqPass().

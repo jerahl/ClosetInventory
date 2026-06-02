@@ -28,7 +28,10 @@ function DeviceRow({ s, zabbixSource, onMove, onInspect }) {
         : "Map this switch to a Zabbix host id and an XIQ device id to enable live data.",
       style: { background: "var(--surface-2)", color: "var(--muted)", borderColor: "var(--border)" }
     }, txt);
-  } else if (zabbixSource === "down") {
+  } else if (zabbixSource === "down" && (s.deviceType || "switch") === "switch") {
+    // Only flag the "down" state on switch rows — servers and 'other' devices
+    // never trigger a snapshot fetch in the first place, so the warning is
+    // misleading on those rows.
     liveChip = React.createElement("span", {
       className: "uplink-tag",
       title: "The Zabbix Item API didn't respond; values shown are the last authored ones.",
