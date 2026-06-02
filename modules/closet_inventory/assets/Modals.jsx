@@ -565,8 +565,15 @@ function SwitchInspectModal({ closet, sw, onClose, onEdit }) {
                           : { background: "var(--surface-2)", color: "var(--muted)", borderColor: "var(--border)" }
   }, text);
 
+  // Identify device-type up front so we can gate switch-only sections
+  // (port bar, PoE, uplinks) and surface server-only chips (osLabel).
+  const _t = (sw.deviceType || "switch").toLowerCase();
+  const _isSwitch = _t === "switch";
+  const _isServer = _t === "server";
+
   const live = [];
-  if (sw.poeStatus) live.push(tag("PoE: " + sw.poeStatus, "ok"));
+  if (_isServer && sw.osLabel) live.push(tag("OS: " + sw.osLabel, null));
+  if (_isSwitch && sw.poeStatus) live.push(tag("PoE: " + sw.poeStatus, "ok"));
   if (sw.xiqConnected !== undefined) live.push(tag(sw.xiqConnected ? "XIQ: online" : "XIQ: offline", sw.xiqConnected ? "ok" : null));
   if (sw.configBackupAgeDays != null) {
     const d = +sw.configBackupAgeDays;
@@ -606,10 +613,11 @@ function SwitchInspectModal({ closet, sw, onClose, onEdit }) {
       ipt("Model", sw.model),
       ipt("Serial", sw.serial, true),
       ipt("Mgmt IP", sw.mgmtIp, true),
-      ipt("Stack size", sw.stack > 1 ? sw.stack + " members" : "single unit")
+      _isServer && sw.osLabel ? ipt("OS", sw.osLabel) : null,
+      _isSwitch ? ipt("Stack size", sw.stack > 1 ? sw.stack + " members" : "single unit") : null
     ),
-    React.createElement("div", { className: "panel__sub", style: { marginBottom: 10, fontWeight: 600 } }, "Ports & power"),
-    React.createElement("div", { className: "swrow__specs", style: { marginBottom: 18 } },
+    _isSwitch && React.createElement("div", { className: "panel__sub", style: { marginBottom: 10, fontWeight: 600 } }, "Ports & power"),
+    _isSwitch && React.createElement("div", { className: "swrow__specs", style: { marginBottom: 18 } },
       React.createElement("div", { className: "spec", style: { minWidth: 180 } },
         React.createElement("div", { className: "spec__k" }, "Port usage"),
         React.createElement("div", { style: { marginTop: 4 } }, React.createElement(PortBar, { used: sw.used, total: sw.ports, width: 120 }))),
