@@ -212,10 +212,11 @@ function App() {
     } catch (e) { toast(e.message); }
   };
 
-  const addSwitch = async (sw) => {
+  const saveSwitch = async (sw) => {
     const c = modal.closet;
+    const editing = sw.id != null;
     try {
-      await apiPost("closet.switch.save", {
+      const payload = {
         closetUid: c.uid,
         name: sw.name, vendor: sw.vendor, model: sw.model,
         ports: +sw.ports || 0, used: +sw.used || 0,
@@ -226,8 +227,10 @@ function App() {
         xiqDeviceId: +sw.xiqDeviceId || 0,
         zabbixHostid: sw.zabbixHostid || "",
         rconfigDeviceId: +sw.rconfigDeviceId || 0
-      });
-      toast("Switch added to " + c.code + ".");
+      };
+      if (editing) payload.id = sw.id;
+      await apiPost("closet.switch.save", payload);
+      toast(editing ? ("Switch " + sw.name + " updated.") : ("Switch added to " + c.code + "."));
       setModal(null);
       await loadList();
       if (route.view === "detail") await loadDetail(c.uid);
@@ -431,7 +434,7 @@ function App() {
     modal && modal.kind === "flag" &&
       React.createElement(FlagModal, { closet: modal.closet, onClose: () => setModal(null), onSave: doFlag }),
     modal && modal.kind === "switch" &&
-      React.createElement(SwitchFormModal, { closet: modal.closet, onClose: () => setModal(null), onSave: addSwitch }),
+      React.createElement(SwitchFormModal, { closet: modal.closet, sw: modal.sw || null, onClose: () => setModal(null), onSave: saveSwitch }),
     modal && modal.kind === "maint" &&
       React.createElement(MaintFormModal, { closet: modal.closet, onClose: () => setModal(null), onSave: addMaint }),
     modal && modal.kind === "power" &&
@@ -439,7 +442,11 @@ function App() {
     modal && modal.kind === "move" &&
       React.createElement(MoveSwitchModal, { closet: modal.closet, sw: modal.sw, closets, onClose: () => setModal(null), onSave: (payload) => moveSwitch(modal.sw, payload) }),
     modal && modal.kind === "inspect" &&
-      React.createElement(SwitchInspectModal, { closet: modal.closet, sw: modal.sw, onClose: () => setModal(null) }),
+      React.createElement(SwitchInspectModal, {
+        closet: modal.closet, sw: modal.sw,
+        onClose: () => setModal(null),
+        onEdit: (s) => setModal({ kind: "switch", closet: modal.closet, sw: s })
+      }),
 
     React.createElement("div", { className: "toast-wrap" },
       toasts.map((t) => React.createElement(Toast, {

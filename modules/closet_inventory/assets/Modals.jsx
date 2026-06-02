@@ -75,15 +75,33 @@ function FlagModal({ closet, onClose, onSave }) {
   );
 }
 
-function SwitchFormModal({ closet, onClose, onSave }) {
+function SwitchFormModal({ closet, sw, onClose, onSave }) {
+  const editing = !!sw;
   const models = [
     "Cisco Catalyst 9300-48P", "Cisco Catalyst 9300-24P", "Cisco Catalyst 9200-48P",
     "Aruba CX 6300M 48G", "Juniper EX4300-48P", "Meraki MS225-48LP", "Meraki MS210-24P",
   ];
-  const [f, setF] = React.useState({
-    name: `${closet.schoolId}-${closet.type}-SW${closet.switches.length + 1}`,
-    model: models[0], ports: 48, used: 0, uplinks: 1, uplinkSpeed: "10G SFP+", mgmtIp: "", serial: "", stack: 1, poe: true,
-    xiqDeviceId: "", zabbixHostid: "", rconfigDeviceId: "",
+  const [f, setF] = React.useState(() => {
+    if (editing) {
+      // Re-assemble the combined "Vendor Model" string for the dropdown.
+      const combined = ((sw.vendor || "") + " " + (sw.model || "")).trim();
+      return {
+        id: sw.id, name: sw.name || "",
+        model: combined || models[0],
+        ports: sw.ports || 0, used: sw.used || 0,
+        uplinks: sw.uplinks || 0, uplinkSpeed: sw.uplinkSpeed || "10G SFP+",
+        mgmtIp: sw.mgmtIp || "", serial: sw.serial || "",
+        stack: sw.stack || 1, poe: !!sw.poe,
+        xiqDeviceId: sw.xiqDeviceId || "",
+        zabbixHostid: sw.zabbixHostid || "",
+        rconfigDeviceId: sw.rconfigDeviceId || "",
+      };
+    }
+    return {
+      name: `${closet.schoolId}-${closet.type}-SW${closet.switches.length + 1}`,
+      model: models[0], ports: 48, used: 0, uplinks: 1, uplinkSpeed: "10G SFP+", mgmtIp: "", serial: "", stack: 1, poe: true,
+      xiqDeviceId: "", zabbixHostid: "", rconfigDeviceId: "",
+    };
   });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
 
@@ -255,8 +273,8 @@ function SwitchFormModal({ closet, onClose, onSave }) {
   };
 
   return React.createElement(Modal, {
-    title: "Add switch",
-    sub: "to " + closet.code,
+    title: editing ? "Edit switch" : "Add switch",
+    sub: editing ? (sw.name + " · " + closet.code) : ("to " + closet.code),
     icon: React.createElement(Ic.Switch, null),
     onClose,
     footer: React.createElement(React.Fragment, null,
@@ -271,7 +289,7 @@ function SwitchFormModal({ closet, onClose, onSave }) {
           zabbixHostid: f.zabbixHostid || "",
           rconfigDeviceId: +f.rconfigDeviceId || 0
         });
-      } }, React.createElement(Ic.Check, null), "Add switch")
+      } }, React.createElement(Ic.Check, null), editing ? "Save changes" : "Add switch")
     ),
   },
     // -------- Lookup subsection --------
@@ -498,7 +516,7 @@ function MoveSwitchModal({ closet, sw, closets, onClose, onSave }) {
   );
 }
 
-function SwitchInspectModal({ closet, sw, onClose }) {
+function SwitchInspectModal({ closet, sw, onClose, onEdit }) {
   const ipt = (k, v, mono) => v == null || v === "" ? null
     : React.createElement("div", { className: "spec", style: { minWidth: 160 } },
         React.createElement("div", { className: "spec__k" }, k),
@@ -529,7 +547,20 @@ function SwitchInspectModal({ closet, sw, onClose }) {
     icon: React.createElement(Ic.Switch, null),
     wide: true,
     onClose,
-    footer: React.createElement("button", { className: "btn", onClick: onClose }, "Close")
+    footer: React.createElement(React.Fragment, null,
+      // Open the switch in the sibling tcs_dashboard's Switches view —
+      // only when this switch is mapped to a Zabbix host.
+      sw.zabbixHostid && React.createElement("a", {
+        className: "btn",
+        href: "zabbix.php?action=tcs.switches.view&switchid=" + encodeURIComponent(sw.zabbixHostid),
+        target: "_blank", rel: "noopener"
+      }, React.createElement(Ic.Network, null), "Open in Zabbix"),
+      onEdit && React.createElement("button", {
+        className: "btn",
+        onClick: () => { onClose(); onEdit(sw); }
+      }, React.createElement(Ic.Server, null), "Edit"),
+      React.createElement("button", { className: "btn btn--primary", onClick: onClose }, "Close")
+    )
   },
     React.createElement("div", { className: "panel__sub", style: { marginBottom: 10, fontWeight: 600 } }, "Identity"),
     React.createElement("div", { className: "swrow__specs", style: { marginBottom: 18 } },
