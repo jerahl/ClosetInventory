@@ -47,6 +47,11 @@ function DeviceRow({ s, zabbixSource, onMove, onInspect }) {
     React.createElement("div", { className: "swrow__icon" }, React.createElement(rowIcon, null)),
     React.createElement("div", { className: "swrow__main" },
       React.createElement("div", { className: "swrow__name" }, s.name,
+        isServer && s.osLabel && React.createElement("span", {
+          className: "uplink-tag",
+          title: "Operating system reported by Zabbix host inventory",
+          style: { background: "var(--surface-2)", color: "var(--muted)", borderColor: "var(--border)" }
+        }, s.osLabel),
         isSwitch && s.stack > 1 && React.createElement("span", { className: "uplink-tag", style: { background: "var(--violet-soft)", color: "var(--violet)", borderColor: "color-mix(in oklch, var(--violet) 25%, transparent)" } }, `Stack ×${s.stack}`),
         isSwitch && s.poe && React.createElement("span", { className: "uplink-tag" }, "PoE+"),
         isSwitch && s.poeStatus && React.createElement("span", {
@@ -83,8 +88,7 @@ function DeviceRow({ s, zabbixSource, onMove, onInspect }) {
         liveChip
       ),
       React.createElement("div", { className: "swrow__model" },
-        isServer ? (s.osLabel || `${s.vendor} ${s.model}`.trim() || "Server")
-                 : `${s.vendor} ${s.model}`,
+        (`${s.vendor || ""} ${s.model || ""}`.trim()) || (isServer ? "Server" : (isSwitch ? "Switch" : "Device")),
         s.xiqSoftware && React.createElement("span", { className: "muted", style: { marginLeft: 8, fontSize: 11.5 } }, "· " + s.xiqSoftware)
       ),
       React.createElement("div", { className: "swrow__specs" },
@@ -445,7 +449,7 @@ function DetailView({ closet, onFlag, onResolve, onEdit, onAddSwitch, onAddMaint
                 g.key === "switch" && React.createElement("button", { className: "btn btn--sm panel-act", onClick: () => onAddSwitch(c) }, React.createElement(Ic.Plus, null), "Add")
               ),
               React.createElement("div", { className: "panel__body panel__body--flush" },
-                g.list.map((sw, i) => React.createElement(SwitchRow, {
+                g.list.map((sw, i) => React.createElement(DeviceRow, {
                   key: i, s: sw,
                   zabbixSource: (c._live && c._live.sources && c._live.sources.zabbix) || null,
                   onMove: onMove ? (s) => onMove(c, s) : null,
@@ -503,4 +507,7 @@ function DetailView({ closet, onFlag, onResolve, onEdit, onAddSwitch, onAddMaint
   );
 }
 
-Object.assign(window, { DetailView, SwitchRow, PowerPanel, PhotosPanel, ProblemsBlock });
+// Back-compat: legacy callers still reference SwitchRow. DeviceRow is the
+// canonical name now that the row handles switches/servers/other.
+const SwitchRow = DeviceRow;
+Object.assign(window, { DetailView, DeviceRow, SwitchRow, PowerPanel, PhotosPanel, ProblemsBlock });
