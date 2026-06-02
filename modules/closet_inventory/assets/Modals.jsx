@@ -476,6 +476,7 @@ function PowerFormModal({ closet, onClose, onSave }) {
       );
     }),
     React.createElement("datalist", { id: "ups-models" }, UPS_MODELS.map((m) => React.createElement("option", { key: m, value: m }))),
+    React.createElement("datalist", { id: "pdu-models" }, PDU_MODELS.map((m) => React.createElement("option", { key: m, value: m }))),
 
     // ---- PDUs ----
     React.createElement("div", { style: { height: 6 } }),
@@ -488,8 +489,7 @@ function PowerFormModal({ closet, onClose, onSave }) {
           React.createElement("h4", null, "PDU " + (i + 1)),
           React.createElement("button", { className: "btn btn--sm btn--danger rm", onClick: () => setPdu((l) => l.filter((_, j) => j !== i)) }, React.createElement(Ic.Trash, null), "Remove")),
         React.createElement(Field, { label: "Model" },
-          React.createElement("select", { value: d.model, onChange: (e) => setD(i, "model", e.target.value) },
-            PDU_MODELS.concat(PDU_MODELS.includes(d.model) ? [] : [d.model]).map((m) => React.createElement("option", { key: m }, m)))),
+          React.createElement("input", { className: "input", value: d.model || "", list: "pdu-models", onChange: (e) => setD(i, "model", e.target.value), placeholder: "e.g. APC AP8941 Switched" })),
         React.createElement("div", { className: "field-row" },
           React.createElement(Field, { label: "Outlets" },
             React.createElement("input", { className: "input", type: "number", min: 0, value: d.outlets, onChange: (e) => setD(i, "outlets", e.target.value) })),
