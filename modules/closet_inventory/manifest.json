@@ -97,6 +97,10 @@
         "closet.queue.data": {
             "class": "ActionServiceQueueData",
             "layout": "layout.json"
+        },
+        "closet.maintenance.data": {
+            "class": "ActionMaintenanceData",
+            "layout": "layout.json"
         }
     }
 }

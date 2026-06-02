@@ -47,6 +47,8 @@ function App() {
   const [closets, setClosets] = useState([]);
   const [schools, setSchools] = useState([]);
   const [queue, setQueue] = useState(null);
+  const [maint, setMaint] = useState(null);
+  const [maintFilters, setMaintFilters] = useState({ from: "", to: "", tech: "", type: "", closetUid: 0 });
   const [loading, setLoading] = useState(true);
   const [route, setRoute] = useState({ view: BOOT.initialView === "detail" ? "detail" : "list", uid: BOOT.initialUid || null });
   const [query, setQuery] = useState("");
@@ -123,6 +125,15 @@ function App() {
     } catch (e) { toast(e.message); }
   };
 
+  const loadMaintenance = async () => {
+    try {
+      const params = {};
+      Object.entries(maintFilters).forEach(([k, v]) => { if (v) params[k] = v; });
+      const data = await apiGet("closet.maintenance.data", params);
+      setMaint(data);
+    } catch (e) { toast(e.message); }
+  };
+
   useEffect(() => { loadList(); }, []);
   useEffect(() => {
     if (route.view === "detail" && route.uid != null) loadDetail(route.uid);
@@ -130,6 +141,9 @@ function App() {
   useEffect(() => {
     if (route.view === "queue") loadQueue();
   }, [route.view]);
+  useEffect(() => {
+    if (route.view === "maint") loadMaintenance();
+  }, [route.view, JSON.stringify(maintFilters)]);
 
   // ---- theme/accent/density wiring (unchanged from the design) ----
   useEffect(() => {
@@ -377,7 +391,10 @@ function App() {
         },
           React.createElement(Ic.Flag, null), "Service queue",
           flaggedCount > 0 && React.createElement("span", { className: "nav__count", style: { background: "var(--amber)", color: "#1a1206" } }, flaggedCount)),
-        React.createElement("button", { className: "nav__item" }, React.createElement(Ic.Wrench, null), "Maintenance"),
+        React.createElement("button", {
+          className: "nav__item" + (route.view === "maint" ? " is-active" : ""),
+          onClick: () => { setRoute({ view: "maint", uid: null }); setNavOpen(false); }
+        }, React.createElement(Ic.Wrench, null), "Maintenance"),
         React.createElement("button", { className: "nav__item" }, React.createElement(Ic.Building, null), "Schools",
           React.createElement("span", { className: "nav__count" }, schools.length))
       ),
@@ -397,6 +414,8 @@ function App() {
           React.createElement("span", { className: "crumbs__sep" }, React.createElement(Ic.Chevron, { width: 14, height: 14 })),
           route.view === "queue"
             ? React.createElement("span", { className: "crumbs__here" }, "Service queue")
+            : route.view === "maint"
+            ? React.createElement("span", { className: "crumbs__here" }, "Maintenance")
             : current
               ? React.createElement(React.Fragment, null,
                   React.createElement("a", { onClick: goList }, "Switch closets"),
@@ -421,6 +440,15 @@ function App() {
                   onOpen: (uid) => setRoute({ view: "detail", uid }),
                   onResolve: (c) => resolveFlag(c).then(loadQueue),
                   onRefresh: loadQueue
+                })
+              : route.view === "maint"
+              ? React.createElement(MaintenanceView, {
+                  data: maint,
+                  filters: maintFilters,
+                  onChangeFilters: setMaintFilters,
+                  onOpen: (uid) => setRoute({ view: "detail", uid }),
+                  onRefresh: loadMaintenance,
+                  isAdmin: !!BOOT.isAdmin
                 })
               : (route.view === "detail" && current)
               ? React.createElement(React.Fragment, null,
