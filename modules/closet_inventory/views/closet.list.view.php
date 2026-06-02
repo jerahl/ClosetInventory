@@ -28,5 +28,6 @@ window.SeedData = window.SeedData || { schools: [], closets: [] };
 <script type="text/babel" data-presets="env,react" src="modules/closet_inventory/assets/tweaks-panel.jsx"></script>
 <script type="text/babel" data-presets="env,react" src="modules/closet_inventory/assets/ListView.jsx"></script>
 <script type="text/babel" data-presets="env,react" src="modules/closet_inventory/assets/DetailView.jsx"></script>
+<script type="text/babel" data-presets="env,react" src="modules/closet_inventory/assets/QueueView.jsx"></script>
 <script type="text/babel" data-presets="env,react" src="modules/closet_inventory/assets/Modals.jsx"></script>
 <script type="text/babel" data-presets="env,react" src="modules/closet_inventory/assets/App.jsx"></script>

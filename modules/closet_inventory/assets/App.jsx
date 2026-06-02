@@ -46,6 +46,7 @@ function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [closets, setClosets] = useState([]);
   const [schools, setSchools] = useState([]);
+  const [queue, setQueue] = useState(null);
   const [loading, setLoading] = useState(true);
   const [route, setRoute] = useState({ view: BOOT.initialView === "detail" ? "detail" : "list", uid: BOOT.initialUid || null });
   const [query, setQuery] = useState("");
@@ -115,10 +116,20 @@ function App() {
     }
   };
 
+  const loadQueue = async () => {
+    try {
+      const data = await apiGet("closet.queue.data");
+      setQueue(data);
+    } catch (e) { toast(e.message); }
+  };
+
   useEffect(() => { loadList(); }, []);
   useEffect(() => {
     if (route.view === "detail" && route.uid != null) loadDetail(route.uid);
   }, [route.view, route.uid]);
+  useEffect(() => {
+    if (route.view === "queue") loadQueue();
+  }, [route.view]);
 
   // ---- theme/accent/density wiring (unchanged from the design) ----
   useEffect(() => {
@@ -360,7 +371,10 @@ function App() {
         React.createElement("button", { className: "nav__item", onClick: goList },
           React.createElement(Ic.Bolt, null), "Power"),
         React.createElement("div", { className: "nav__label" }, "Operations"),
-        React.createElement("button", { className: "nav__item", onClick: () => { setRoute({ view: "list", uid: null }); } },
+        React.createElement("button", {
+          className: "nav__item" + (route.view === "queue" ? " is-active" : ""),
+          onClick: () => { setRoute({ view: "queue", uid: null }); setNavOpen(false); }
+        },
           React.createElement(Ic.Flag, null), "Service queue",
           flaggedCount > 0 && React.createElement("span", { className: "nav__count", style: { background: "var(--amber)", color: "#1a1206" } }, flaggedCount)),
         React.createElement("button", { className: "nav__item" }, React.createElement(Ic.Wrench, null), "Maintenance"),
@@ -381,12 +395,14 @@ function App() {
         React.createElement("div", { className: "crumbs" },
           React.createElement("a", { onClick: goList }, "Inventory"),
           React.createElement("span", { className: "crumbs__sep" }, React.createElement(Ic.Chevron, { width: 14, height: 14 })),
-          current
-            ? React.createElement(React.Fragment, null,
-                React.createElement("a", { onClick: goList }, "Switch closets"),
-                React.createElement("span", { className: "crumbs__sep" }, React.createElement(Ic.Chevron, { width: 14, height: 14 })),
-                React.createElement("span", { className: "crumbs__here" }, current.code))
-            : React.createElement("span", { className: "crumbs__here" }, "Switch closets")
+          route.view === "queue"
+            ? React.createElement("span", { className: "crumbs__here" }, "Service queue")
+            : current
+              ? React.createElement(React.Fragment, null,
+                  React.createElement("a", { onClick: goList }, "Switch closets"),
+                  React.createElement("span", { className: "crumbs__sep" }, React.createElement(Ic.Chevron, { width: 14, height: 14 })),
+                  React.createElement("span", { className: "crumbs__here" }, current.code))
+              : React.createElement("span", { className: "crumbs__here" }, "Switch closets")
         ),
         React.createElement("div", { className: "searchbox" },
           React.createElement(Ic.Search, null),
@@ -398,7 +414,15 @@ function App() {
       React.createElement("div", { className: "content" },
         loading
           ? React.createElement("div", { className: "muted", style: { padding: 32, textAlign: "center" } }, "Loading closets…")
-          : (route.view === "detail" && current)
+          : route.view === "queue"
+              ? React.createElement(QueueView, {
+                  queue,
+                  isAdmin: !!BOOT.isAdmin,
+                  onOpen: (uid) => setRoute({ view: "detail", uid }),
+                  onResolve: (c) => resolveFlag(c).then(loadQueue),
+                  onRefresh: loadQueue
+                })
+              : (route.view === "detail" && current)
               ? React.createElement(React.Fragment, null,
                   React.createElement("button", { className: "btn btn--ghost btn--sm", style: { marginBottom: 16, marginLeft: -6 }, onClick: goList },
                     React.createElement(Ic.Chevron, { style: { transform: "rotate(180deg)" } }), "All closets"),

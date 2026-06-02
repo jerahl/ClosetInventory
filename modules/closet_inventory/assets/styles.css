@@ -615,3 +615,12 @@ input, select, textarea { font-family: inherit; }
 }
 .mobile-cards { display: none; }
 @media (max-width: 860px) { .mobile-cards { display: grid; } }
+
+/* Service queue: drop intermediate columns on narrow screens, keep code,
+   school, and actions. */
+@media (max-width: 860px) {
+  .queue-tbl .q-col-mid { display: none; }
+}
+@media (max-width: 560px) {
+  .queue-tbl .q-col-school { display: none; }
+}

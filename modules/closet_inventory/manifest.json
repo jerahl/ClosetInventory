@@ -93,6 +93,10 @@
         "closet.populate.zabbix": {
             "class": "ActionPopulateFromZabbix",
             "layout": "layout.json"
+        },
+        "closet.queue.data": {
+            "class": "ActionServiceQueueData",
+            "layout": "layout.json"
         }
     }
 }
