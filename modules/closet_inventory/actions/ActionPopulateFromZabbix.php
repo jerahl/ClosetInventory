@@ -169,6 +169,12 @@ class ActionPopulateFromZabbix extends CController {
                 if ($schoolUpsert['created']) {
                     $report['schoolsCreated']++;
                 }
+                // CRITICAL: upsertSchool may return a different id than the
+                // one we derived if the slug collided with an existing
+                // school (e.g. both "Northridge High" and "New Heights"
+                // initialise to NHS, so the second gets NHS2). Use the id
+                // it actually returned for downstream foreign keys.
+                $schoolId = $schoolUpsert['id'];
 
                 $hosts = [];
                 try {
