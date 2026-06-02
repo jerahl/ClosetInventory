@@ -43,8 +43,17 @@ function SortHead({ label, col, sort, setSort, alignRight }) {
   );
 }
 
-function ListView({ closets, query, onOpen, onAddCloset, onFlag, onRefreshCounters, onSeed, onPopulateZabbix, isAdmin }) {
-  const [school, setSchool] = React.useState("all");
+function ListView({ closets, query, onOpen, onAddCloset, onFlag, onRefreshCounters, onSeed, onPopulateZabbix, isAdmin, initialSchool, onConsumeInitialSchool }) {
+  const [school, setSchool] = React.useState(initialSchool || "all");
+  // Adopt a late-arriving initialSchool (e.g. Schools tile click while list is
+  // already mounted). One-shot — clear in the parent after applying so a manual
+  // dropdown change isn't fought next render.
+  React.useEffect(() => {
+    if (initialSchool) {
+      setSchool(initialSchool);
+      onConsumeInitialSchool && onConsumeInitialSchool();
+    }
+  }, [initialSchool]);
   const [type, setType] = React.useState("all");
   const [flaggedOnly, setFlaggedOnly] = React.useState(false);
   const [sort, setSort] = React.useState({ col: "code", dir: "asc" });

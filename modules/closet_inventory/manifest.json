@@ -101,6 +101,10 @@
         "closet.maintenance.data": {
             "class": "ActionMaintenanceData",
             "layout": "layout.json"
+        },
+        "closet.schools.data": {
+            "class": "ActionSchoolsData",
+            "layout": "layout.json"
         }
     }
 }

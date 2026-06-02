@@ -49,6 +49,8 @@ function App() {
   const [queue, setQueue] = useState(null);
   const [maint, setMaint] = useState(null);
   const [maintFilters, setMaintFilters] = useState({ from: "", to: "", tech: "", type: "", closetUid: 0 });
+  const [schoolsData, setSchoolsData] = useState(null);
+  const [listSchoolFilter, setListSchoolFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [route, setRoute] = useState({ view: BOOT.initialView === "detail" ? "detail" : "list", uid: BOOT.initialUid || null });
   const [query, setQuery] = useState("");
@@ -134,6 +136,13 @@ function App() {
     } catch (e) { toast(e.message); }
   };
 
+  const loadSchools = async () => {
+    try {
+      const data = await apiGet("closet.schools.data");
+      setSchoolsData(data);
+    } catch (e) { toast(e.message); }
+  };
+
   useEffect(() => { loadList(); }, []);
   useEffect(() => {
     if (route.view === "detail" && route.uid != null) loadDetail(route.uid);
@@ -144,6 +153,9 @@ function App() {
   useEffect(() => {
     if (route.view === "maint") loadMaintenance();
   }, [route.view, JSON.stringify(maintFilters)]);
+  useEffect(() => {
+    if (route.view === "schools") loadSchools();
+  }, [route.view]);
 
   // ---- theme/accent/density wiring (unchanged from the design) ----
   useEffect(() => {
@@ -203,6 +215,14 @@ function App() {
   // ---- handlers ----
   const openCloset = (c) => { setRoute({ view: "detail", uid: c.uid }); setNavOpen(false); };
   const goList = () => setRoute({ view: "list", uid: null });
+  // From the Schools tile: route to the list and seed the dropdown filter.
+  // ListView reads `initialSchool` once on mount via a useEffect, so we
+  // unmount it by routing through "schools" first only if already on list.
+  const openSchool = (id) => {
+    setListSchoolFilter(id || "");
+    setRoute({ view: "list", uid: null });
+    setNavOpen(false);
+  };
 
   const saveCloset = async (f) => {
     try {
@@ -376,7 +396,10 @@ function App() {
       ),
       React.createElement("nav", { className: "nav" },
         React.createElement("div", { className: "nav__label" }, "Inventory"),
-        React.createElement("button", { className: "nav__item is-active", onClick: goList },
+        React.createElement("button", {
+          className: "nav__item" + (route.view === "list" || route.view === "detail" ? " is-active" : ""),
+          onClick: goList
+        },
           React.createElement(Ic.Server, null), "Switch closets",
           React.createElement("span", { className: "nav__count" }, closets.length)),
         React.createElement("button", { className: "nav__item", onClick: goList },
@@ -395,7 +418,10 @@ function App() {
           className: "nav__item" + (route.view === "maint" ? " is-active" : ""),
           onClick: () => { setRoute({ view: "maint", uid: null }); setNavOpen(false); }
         }, React.createElement(Ic.Wrench, null), "Maintenance"),
-        React.createElement("button", { className: "nav__item" }, React.createElement(Ic.Building, null), "Schools",
+        React.createElement("button", {
+          className: "nav__item" + (route.view === "schools" ? " is-active" : ""),
+          onClick: () => { setRoute({ view: "schools", uid: null }); setNavOpen(false); }
+        }, React.createElement(Ic.Building, null), "Schools",
           React.createElement("span", { className: "nav__count" }, schools.length))
       ),
       React.createElement("div", { className: "sidebar__foot" },
@@ -416,6 +442,8 @@ function App() {
             ? React.createElement("span", { className: "crumbs__here" }, "Service queue")
             : route.view === "maint"
             ? React.createElement("span", { className: "crumbs__here" }, "Maintenance")
+            : route.view === "schools"
+            ? React.createElement("span", { className: "crumbs__here" }, "Schools")
             : current
               ? React.createElement(React.Fragment, null,
                   React.createElement("a", { onClick: goList }, "Switch closets"),
@@ -440,6 +468,13 @@ function App() {
                   onOpen: (uid) => setRoute({ view: "detail", uid }),
                   onResolve: (c) => resolveFlag(c).then(loadQueue),
                   onRefresh: loadQueue
+                })
+              : route.view === "schools"
+              ? React.createElement(SchoolsView, {
+                  data: schoolsData,
+                  onOpenSchool: openSchool,
+                  onRefresh: loadSchools,
+                  isAdmin: !!BOOT.isAdmin
                 })
               : route.view === "maint"
               ? React.createElement(MaintenanceView, {
@@ -477,6 +512,8 @@ function App() {
                   onSeed: seedStarter,
                   onPopulateZabbix: populateZabbix,
                   isAdmin: !!BOOT.isAdmin,
+                  initialSchool: listSchoolFilter,
+                  onConsumeInitialSchool: () => setListSchoolFilter(null),
                 })
       )
     ),
