@@ -630,25 +630,11 @@ class InventoryStore {
         $now = date('Y-m-d H:i:s');
 
         if ($row !== false && $row !== null) {
-            $uid = (int) $row['uid'];
-            $updates = [];
-            $map = [
-                'type'      => 'type',
-                'schoolId'  => 'school_id',
-                'building'  => 'building',
-                'floor'     => 'floor',
-                'room'      => 'room'
-            ];
-            foreach ($map as $in => $col) {
-                if (array_key_exists($in, $payload) && $payload[$in] !== null && $payload[$in] !== '') {
-                    $updates[$col] = $in === 'floor' ? (int) $payload[$in] : (string) $payload[$in];
-                }
-            }
-            if ($updates !== []) {
-                $updates['updated_at'] = $now;
-                $this->dbUpdate('tcs_closet_closets', $updates, ['uid' => $uid]);
-            }
-            return ['uid' => $uid, 'created' => false];
+            // Existing closet — never overwrite operator-authored fields on
+            // a Populate-style upsert. Type / schoolId / building / floor /
+            // room may have been corrected manually after the initial import;
+            // re-running Populate must NOT revert those edits.
+            return ['uid' => (int) $row['uid'], 'created' => false];
         }
 
         $fields = [
@@ -679,10 +665,27 @@ class InventoryStore {
         if ($closetUid <= 0 || $name === '') {
             return ['id' => 0, 'created' => false];
         }
-        $row = \DBfetch(\DBselect(
-            'SELECT id FROM tcs_closet_switches WHERE closet_uid='.$closetUid
-            .' AND name='.\zbx_dbstr($name)
-        ));
+        // 1) Match by zabbix_hostid FIRST when provided. This honours operator
+        //    moves: if a switch was relocated to a different closet via the
+        //    Move action, its zabbix_hostid is unchanged, so we'll find it
+        //    wherever it lives now instead of creating a duplicate row in the
+        //    hostname-implied closet.
+        $hostidPayload = isset($payload['zabbixHostid']) ? trim((string) $payload['zabbixHostid']) : '';
+        $row = false;
+        if ($hostidPayload !== '') {
+            $row = \DBfetch(\DBselect(
+                'SELECT id FROM tcs_closet_switches WHERE zabbix_hostid='.\zbx_dbstr($hostidPayload)
+            ));
+        }
+        // 2) Fall back to the (closet_uid, name) key for devices that were
+        //    authored by hand (no zabbix_hostid yet) and for the legacy code
+        //    path that never sent the hostid.
+        if ($row === false || $row === null) {
+            $row = \DBfetch(\DBselect(
+                'SELECT id FROM tcs_closet_switches WHERE closet_uid='.$closetUid
+                .' AND name='.\zbx_dbstr($name)
+            ));
+        }
         if ($row !== false && $row !== null) {
             $id = (int) $row['id'];
             $updates = [];
