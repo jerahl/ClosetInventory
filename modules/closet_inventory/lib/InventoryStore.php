@@ -11,6 +11,14 @@ use CWebUser;
  *
  * Live operational data (Zabbix port state, XIQ telemetry, rConfig backups)
  * never lives in here — that's the enrichment layer, wired in Phase 2+.
+ *
+ * NOTE on naming: the table `tcs_closet_switches` historically held only
+ * switches. As of schema v2 it stores ALL closet device types (switch,
+ * server, other) discriminated by the `device_type` column. The table name
+ * was kept to avoid churn — renaming it would force migrations and break
+ * any external query referencing the legacy name. The JSON contract on
+ * `closet.view.data` also keeps emitting these rows under the `switches`
+ * key with a `deviceType` discriminator so existing frontends keep loading.
  */
 class InventoryStore {
 
@@ -135,6 +143,7 @@ class InventoryStore {
         while ($sw = \DBfetch($rs)) {
             $switches[] = [
                 'id'                  => (int) $sw['id'],
+                'deviceType'          => (string) ($sw['device_type'] ?? 'switch'),
                 'name'                => (string) ($sw['name'] ?? ''),
                 'vendor'              => (string) ($sw['vendor'] ?? ''),
                 'model'               => (string) ($sw['model'] ?? ''),
@@ -295,13 +304,19 @@ class InventoryStore {
     }
 
     /**
-     * Insert or update a switch row under $closetUid. Returns the switch id.
+     * Insert or update a device row under $closetUid. Returns the row id.
+     *
+     * The row may represent a switch, server, or "other" device — the type
+     * is taken from $p['deviceType'] (default 'switch' for back-compat with
+     * older callers that don't pass the discriminator).
      *
      * @param array<string, mixed> $p
      */
-    public function saveSwitch(int $closetUid, array $p, ?int $id): int {
+    public function saveDevice(int $closetUid, array $p, ?int $id): int {
+        $deviceType = self::normaliseDeviceType($p['deviceType'] ?? 'switch');
         $fields = [
             'closet_uid'        => $closetUid,
+            'device_type'       => $deviceType,
             'name'              => (string) ($p['name']   ?? ''),
             'vendor'            => (string) ($p['vendor'] ?? ''),
             'model'             => (string) ($p['model']  ?? ''),
@@ -331,6 +346,25 @@ class InventoryStore {
 
         $this->recomputePortCounters($closetUid);
         return $out;
+    }
+
+    /**
+     * Back-compat alias for saveDevice() — callers that still speak the
+     * "switch" vocabulary continue to work.
+     *
+     * @param array<string, mixed> $p
+     */
+    public function saveSwitch(int $closetUid, array $p, ?int $id): int {
+        if (!isset($p['deviceType'])) {
+            $p['deviceType'] = 'switch';
+        }
+        return $this->saveDevice($closetUid, $p, $id);
+    }
+
+    /** Constrain device_type to the known set; default to 'switch'. */
+    private static function normaliseDeviceType($v): string {
+        $v = strtolower((string) $v);
+        return in_array($v, ['switch', 'server', 'other'], true) ? $v : 'switch';
     }
 
     /**
@@ -629,16 +663,16 @@ class InventoryStore {
     }
 
     /**
-     * Idempotent switch upsert keyed on `(closet_uid, name)`. Inserts a new row
-     * when missing; for an existing row only sets the non-null fields supplied
-     * in $payload — specifically used by the bulk importer to attach
-     * `zabbix_hostid` and `mgmt_ip` to switches that were authored by hand.
-     * Never deletes.
+     * Idempotent device upsert keyed on `(closet_uid, name)`. Inserts a new
+     * row when missing; for an existing row only sets the non-null fields
+     * supplied in $payload — specifically used by the bulk importer to
+     * attach `zabbix_hostid`, `device_type`, and `mgmt_ip` to devices that
+     * were authored by hand. Never deletes.
      *
      * @param array<string, mixed> $payload
      * @return array{id:int, created:bool}
      */
-    public function upsertSwitch(int $closetUid, string $name, array $payload): array {
+    public function upsertDevice(int $closetUid, string $name, array $payload): array {
         $name = trim($name);
         if ($closetUid <= 0 || $name === '') {
             return ['id' => 0, 'created' => false];
@@ -662,7 +696,8 @@ class InventoryStore {
                 'stack'           => 'stack_size',
                 'zabbixHostid'    => 'zabbix_hostid',
                 'xiqDeviceId'     => 'xiq_device_id',
-                'rconfigDeviceId' => 'rconfig_device_id'
+                'rconfigDeviceId' => 'rconfig_device_id',
+                'deviceType'      => 'device_type'
             ];
             foreach ($map as $in => $col) {
                 if (!array_key_exists($in, $payload)) continue;
@@ -676,6 +711,9 @@ class InventoryStore {
                      || $in === 'rconfigDeviceId') {
                     $updates[$col] = (int) $v;
                 }
+                elseif ($in === 'deviceType') {
+                    $updates[$col] = self::normaliseDeviceType($v);
+                }
                 else { $updates[$col] = (string) $v; }
             }
             if ($updates !== []) {
@@ -687,6 +725,7 @@ class InventoryStore {
 
         $fields = [
             'closet_uid'        => $closetUid,
+            'device_type'       => self::normaliseDeviceType($payload['deviceType'] ?? 'switch'),
             'name'              => $name,
             'vendor'            => (string) ($payload['vendor'] ?? ''),
             'model'             => (string) ($payload['model']  ?? ''),
@@ -705,6 +744,21 @@ class InventoryStore {
         $newId = $this->dbInsert('tcs_closet_switches', $fields);
         $this->recomputePortCounters($closetUid);
         return ['id' => $newId, 'created' => true];
+    }
+
+    /**
+     * Back-compat alias for upsertDevice() — callers that still speak the
+     * "switch" vocabulary continue to work. Forces deviceType=switch unless
+     * the caller already set it.
+     *
+     * @param array<string, mixed> $payload
+     * @return array{id:int, created:bool}
+     */
+    public function upsertSwitch(int $closetUid, string $name, array $payload): array {
+        if (!isset($payload['deviceType'])) {
+            $payload['deviceType'] = 'switch';
+        }
+        return $this->upsertDevice($closetUid, $name, $payload);
     }
 
     /**

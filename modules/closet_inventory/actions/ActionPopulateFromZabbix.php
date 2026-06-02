@@ -59,9 +59,12 @@ class ActionPopulateFromZabbix extends CController {
                 'schoolsCreated'   => 0,
                 'closetsCreated'   => 0,
                 'switchesCreated'  => 0,
+                'serversCreated'   => 0,
+                'otherCreated'     => 0,
                 'hostsScanned'     => 0,
                 'hostsExcluded'    => 0,
                 'switchesRemoved'  => 0,
+                'byType'           => ['switches' => 0, 'servers' => 0, 'other' => 0],
                 'errors'           => []
             ];
 
@@ -72,7 +75,9 @@ class ActionPopulateFromZabbix extends CController {
             // / Site/Video/... naming. Comparison is case-insensitive on the
             // suffix; substring compare against /Wireless/ catches every
             // nesting depth.
-            $excludedSegments = ['/wireless/', '/video/', '/servers/', '/wireless aps/'];
+            // Servers used to be excluded; they're now imported as device_type=server
+            // (classified by the `target:windows` / `target:linux` host tag below).
+            $excludedSegments = ['/wireless/', '/video/', '/wireless aps/'];
             $isExcludedGroup = static function (string $name) use ($excludedSegments): bool {
                 $needle = '/' . strtolower($name) . '/';
                 foreach ($excludedSegments as $seg) {

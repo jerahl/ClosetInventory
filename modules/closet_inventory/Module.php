@@ -16,7 +16,7 @@ use CMenuItem;
  */
 class Module extends CModule {
 
-    private const SCHEMA_TARGET = 1;
+    private const SCHEMA_TARGET = 2;
 
     public function init(): void {
         $this->registerMenu();
@@ -108,6 +108,48 @@ class Module extends CModule {
                 continue;
             }
             \DBexecute($stmt);
+        }
+
+        // ---- v2 migration: device_type column on tcs_closet_switches. ----
+        // The table now holds switches, servers, and "other" devices, all
+        // discriminated by the new device_type column. Migration is guarded
+        // by information_schema so re-runs are no-ops.
+        if ($current < 2) {
+            $this->migrateToV2();
+            \DBexecute('INSERT IGNORE INTO tcs_closet_schema_version (version) VALUES (2)');
+        }
+    }
+
+    /**
+     * v2: add device_type to tcs_closet_switches plus a (closet_uid, device_type)
+     * index. Guarded by information_schema lookups so a partial / repeat run
+     * is a no-op.
+     */
+    private function migrateToV2(): void {
+        $colExists = \DBfetch(\DBselect(
+            "SELECT COLUMN_NAME FROM information_schema.COLUMNS"
+            ." WHERE TABLE_SCHEMA = DATABASE()"
+            ." AND TABLE_NAME = 'tcs_closet_switches'"
+            ." AND COLUMN_NAME = 'device_type'"
+        ));
+        if ($colExists === false || $colExists === null) {
+            \DBexecute(
+                "ALTER TABLE tcs_closet_switches"
+                ." ADD COLUMN device_type VARCHAR(8) NOT NULL DEFAULT 'switch'"
+            );
+        }
+
+        $idxExists = \DBfetch(\DBselect(
+            "SELECT INDEX_NAME FROM information_schema.STATISTICS"
+            ." WHERE TABLE_SCHEMA = DATABASE()"
+            ." AND TABLE_NAME = 'tcs_closet_switches'"
+            ." AND INDEX_NAME = 'idx_switch_closet_type'"
+        ));
+        if ($idxExists === false || $idxExists === null) {
+            \DBexecute(
+                'CREATE INDEX idx_switch_closet_type'
+                .' ON tcs_closet_switches (closet_uid, device_type)'
+            );
         }
     }
 }
