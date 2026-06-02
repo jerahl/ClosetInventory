@@ -87,6 +87,7 @@ function SwitchFormModal({ closet, sw, onClose, onSave }) {
       const combined = ((sw.vendor || "") + " " + (sw.model || "")).trim();
       return {
         id: sw.id, name: sw.name || "",
+        deviceType: (sw.deviceType || "switch").toLowerCase(),
         model: combined || models[0],
         ports: sw.ports || 0, used: sw.used || 0,
         uplinks: sw.uplinks || 0, uplinkSpeed: sw.uplinkSpeed || "10G SFP+",
@@ -98,11 +99,13 @@ function SwitchFormModal({ closet, sw, onClose, onSave }) {
       };
     }
     return {
+      deviceType: "switch",
       name: `${closet.schoolId}-${closet.type}-SW${closet.switches.length + 1}`,
       model: models[0], ports: 48, used: 0, uplinks: 1, uplinkSpeed: "10G SFP+", mgmtIp: "", serial: "", stack: 1, poe: true,
       xiqDeviceId: "", zabbixHostid: "", rconfigDeviceId: "",
     };
   });
+  const isSwitch = (f.deviceType || "switch") === "switch";
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
 
   // Lookup section state — three chips, one per source.
@@ -272,26 +275,55 @@ function SwitchFormModal({ closet, sw, onClose, onSave }) {
     setBusy(false);
   };
 
+  const modalIcon = isSwitch ? Ic.Switch : ((f.deviceType === "server") ? Ic.Server : Ic.Building);
   return React.createElement(Modal, {
-    title: editing ? "Edit switch" : "Add switch",
+    title: editing ? "Edit device" : "Add device",
     sub: editing ? (sw.name + " · " + closet.code) : ("to " + closet.code),
-    icon: React.createElement(Ic.Switch, null),
+    icon: React.createElement(modalIcon, null),
     onClose,
     footer: React.createElement(React.Fragment, null,
       React.createElement("button", { className: "btn", onClick: onClose }, "Cancel"),
       React.createElement("button", { className: "btn btn--primary", onClick: () => {
-        const [vendor, ...rest] = f.model.split(" ");
-        onSave({
+        const [vendor, ...rest] = (f.model || "").split(" ");
+        // Switch-only fields are zeroed out when the device type isn't 'switch'
+        // so a server can't accidentally carry stale port/PoE/uplink data.
+        const payload = {
           ...f,
-          vendor, model: rest.join(" "),
-          ports: +f.ports, used: +f.used, uplinks: +f.uplinks, stack: +f.stack,
+          vendor: vendor || "",
+          model: rest.join(" "),
+          ports: isSwitch ? (+f.ports || 0) : 0,
+          used:  isSwitch ? (+f.used  || 0) : 0,
+          uplinks: isSwitch ? (+f.uplinks || 0) : 0,
+          uplinkSpeed: isSwitch ? (f.uplinkSpeed || "") : "",
+          stack: isSwitch ? (+f.stack || 1) : 1,
+          poe: isSwitch ? !!f.poe : false,
           xiqDeviceId: +f.xiqDeviceId || 0,
           zabbixHostid: f.zabbixHostid || "",
-          rconfigDeviceId: +f.rconfigDeviceId || 0
-        });
-      } }, React.createElement(Ic.Check, null), editing ? "Save changes" : "Add switch")
+          rconfigDeviceId: +f.rconfigDeviceId || 0,
+          deviceType: f.deviceType || "switch"
+        };
+        onSave(payload);
+      } }, React.createElement(Ic.Check, null), editing ? "Save changes" : "Add device")
     ),
   },
+    // -------- Device type selector --------
+    React.createElement(Field, { label: "Device type", req: true },
+      React.createElement("div", { className: "radio-row" },
+        [
+          { t: "switch", title: "Switch", d: "Access / distribution switch" },
+          { t: "server", title: "Server", d: "Windows or Linux host" },
+          { t: "other",  title: "Other",  d: "Door access, HVAC, etc." }
+        ].map((o) =>
+          React.createElement("div", {
+            key: o.t,
+            className: "radio-card" + ((f.deviceType || "switch") === o.t ? " is-on" : ""),
+            onClick: () => set("deviceType", o.t)
+          },
+            React.createElement("div", { className: "radio-card__t" }, o.title),
+            React.createElement("div", { className: "radio-card__d" }, o.d))
+        )
+      )
+    ),
     // -------- Lookup subsection --------
     React.createElement("div", {
       className: "field__label",
@@ -326,10 +358,13 @@ function SwitchFormModal({ closet, sw, onClose, onSave }) {
       React.createElement(Field, { label: "Mgmt IP" },
         React.createElement("input", { className: "input mono", value: f.mgmtIp, onChange: (e) => set("mgmtIp", e.target.value), placeholder: "10.10.0.2" }))
     ),
-    React.createElement(Field, { label: "Model" },
-      React.createElement("select", { value: f.model, onChange: (e) => { const m = e.target.value; set("model", m); set("ports", m.includes("24") ? 24 : 48); } },
-        models.map((m) => React.createElement("option", { key: m }, m)))),
-    React.createElement("div", { className: "field-row--3", style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 } },
+    isSwitch
+      ? React.createElement(Field, { label: "Model" },
+          React.createElement("select", { value: f.model, onChange: (e) => { const m = e.target.value; set("model", m); set("ports", m.includes("24") ? 24 : 48); } },
+            models.map((m) => React.createElement("option", { key: m }, m))))
+      : React.createElement(Field, { label: "Vendor / model", hint: "Free-form — e.g. “Dell PowerEdge R650” or “HID VertX EVO”" },
+          React.createElement("input", { className: "input", value: f.model, onChange: (e) => set("model", e.target.value), placeholder: "Vendor model" })),
+    isSwitch && React.createElement("div", { className: "field-row--3", style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 } },
       React.createElement(Field, { label: "Total ports" },
         React.createElement("input", { className: "input", type: "number", value: f.ports, onChange: (e) => set("ports", e.target.value) })),
       React.createElement(Field, { label: "Ports in use" },
@@ -541,10 +576,13 @@ function SwitchInspectModal({ closet, sw, onClose, onEdit }) {
   if (sw.xiqLastSeen) live.push(tag("XIQ last seen: " + sw.xiqLastSeen, null));
   if (sw.xiqSoftware) live.push(tag("Software: " + sw.xiqSoftware, null));
 
+  const inspectType = (sw.deviceType || "switch").toLowerCase();
+  const inspectIcon = inspectType === "server" ? Ic.Server
+                    : (inspectType === "switch" ? Ic.Switch : Ic.Building);
   return React.createElement(Modal, {
-    title: sw.name + (sw.stack > 1 ? ` — Stack ×${sw.stack}` : ""),
+    title: sw.name + (sw.stack > 1 && inspectType === "switch" ? ` — Stack ×${sw.stack}` : ""),
     sub: closet ? closet.code : null,
-    icon: React.createElement(Ic.Switch, null),
+    icon: React.createElement(inspectIcon, null),
     wide: true,
     onClose,
     footer: React.createElement(React.Fragment, null,

@@ -55,7 +55,10 @@ class ActionSchoolsData extends ActionDataBase {
                         'fg' => "oklch(0.45 0.13 {$hue})"
                     ],
                     'closetCount'  => (int) $row['closet_count'],
+                    'deviceCount'  => 0,
                     'switchCount'  => 0,
+                    'serverCount'  => 0,
+                    'otherCount'   => 0,
                     'portsTotal'   => (int) $row['ports_total'],
                     'portsUsed'    => (int) $row['ports_used'],
                     'flaggedCount' => (int) $row['flagged_count'],
@@ -65,31 +68,42 @@ class ActionSchoolsData extends ActionDataBase {
                 $byId[$id]    = count($schools) - 1;
             }
 
-            // Switch counts joined through closets.
+            // Device counts joined through closets, broken down by device_type
+            // so the school tile can show "Devices: N (S switches · V servers · O other)".
             $rs2 = \DBselect(
-                'SELECT c.school_id AS sid, COUNT(sw.id) AS n'
+                'SELECT c.school_id AS sid, sw.device_type AS dt, COUNT(sw.id) AS n'
                 .' FROM tcs_closet_closets c'
                 .' JOIN tcs_closet_switches sw ON sw.closet_uid = c.uid'
-                .' GROUP BY c.school_id'
+                .' GROUP BY c.school_id, sw.device_type'
             );
             while ($r = \DBfetch($rs2)) {
                 $sid = (string) $r['sid'];
-                if (isset($byId[$sid])) {
-                    $schools[$byId[$sid]]['switchCount'] = (int) $r['n'];
-                }
+                if (!isset($byId[$sid])) continue;
+                $dt  = strtolower((string) ($r['dt'] ?? 'switch'));
+                $n   = (int) $r['n'];
+                $schools[$byId[$sid]]['deviceCount'] += $n;
+                if ($dt === 'switch')      $schools[$byId[$sid]]['switchCount'] += $n;
+                elseif ($dt === 'server')  $schools[$byId[$sid]]['serverCount'] += $n;
+                else                       $schools[$byId[$sid]]['otherCount']  += $n;
             }
 
             $totals = [
                 'schools'    => count($schools),
                 'closets'    => 0,
+                'devices'    => 0,
                 'switches'   => 0,
+                'servers'    => 0,
+                'other'      => 0,
                 'portsTotal' => 0,
                 'portsUsed'  => 0,
                 'flagged'    => 0
             ];
             foreach ($schools as $s) {
                 $totals['closets']    += $s['closetCount'];
+                $totals['devices']    += $s['deviceCount'];
                 $totals['switches']   += $s['switchCount'];
+                $totals['servers']    += $s['serverCount'];
+                $totals['other']      += $s['otherCount'];
                 $totals['portsTotal'] += $s['portsTotal'];
                 $totals['portsUsed']  += $s['portsUsed'];
                 $totals['flagged']    += $s['flaggedCount'];

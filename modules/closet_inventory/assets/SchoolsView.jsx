@@ -5,7 +5,7 @@
 function SchoolsView({ data, onOpenSchool, onRefresh, isAdmin }) {
   const loading = !data;
   const schools = (data && data.schools) || [];
-  const totals  = (data && data.totals)  || { schools: 0, closets: 0, switches: 0, portsTotal: 0, portsUsed: 0, flagged: 0 };
+  const totals  = (data && data.totals)  || { schools: 0, closets: 0, devices: 0, switches: 0, servers: 0, other: 0, portsTotal: 0, portsUsed: 0, flagged: 0 };
   const util = totals.portsTotal ? Math.round((totals.portsUsed / totals.portsTotal) * 100) : 0;
 
   const stat = (k, v, sub) =>
@@ -30,7 +30,8 @@ function SchoolsView({ data, onOpenSchool, onRefresh, isAdmin }) {
     React.createElement("div", { className: "stat-strip" },
       stat("Schools",       totals.schools),
       stat("Closets",       totals.closets),
-      stat("Switches",      totals.switches),
+      stat("Devices",       totals.devices != null ? totals.devices : totals.switches,
+        (totals.switches || 0) + " switches · " + (totals.servers || 0) + " servers · " + (totals.other || 0) + " other"),
       stat("Ports in use",  totals.portsUsed.toLocaleString(), util + "% utilization")
     ),
 
@@ -73,9 +74,9 @@ function SchoolTile({ s, onOpenSchool }) {
       React.createElement("div", { className: "mini-stat" },
         React.createElement("div", { className: "mini-stat__k" }, "Closets"),
         React.createElement("div", { className: "mini-stat__v" }, s.closetCount)),
-      React.createElement("div", { className: "mini-stat" },
-        React.createElement("div", { className: "mini-stat__k" }, "Switches"),
-        React.createElement("div", { className: "mini-stat__v" }, s.switchCount)),
+      React.createElement("div", { className: "mini-stat", title: ((s.switchCount || 0) + " switches · " + (s.serverCount || 0) + " servers · " + (s.otherCount || 0) + " other") },
+        React.createElement("div", { className: "mini-stat__k" }, "Devices"),
+        React.createElement("div", { className: "mini-stat__v" }, s.deviceCount != null ? s.deviceCount : s.switchCount)),
       React.createElement("div", { className: "mini-stat" },
         React.createElement("div", { className: "mini-stat__k" }, "Port utilization"),
         React.createElement("div", { className: "mini-stat__v" }, util + "%",

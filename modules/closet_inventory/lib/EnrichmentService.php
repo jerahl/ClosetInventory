@@ -41,6 +41,9 @@ class EnrichmentService {
     /** rConfig per-device cache TTL (seconds). */
     private const TTL_RCONFIG_DEVICE = 300;
 
+    /** Server inventory cache TTL (seconds). */
+    private const TTL_SERVER_INV = 300;
+
     private Cache $cache;
 
     /** Lazy-built XIQ clients; null when no credentials are configured. */
@@ -142,6 +145,28 @@ class EnrichmentService {
                 continue;
             }
             $anyConfigured = true;
+
+            $deviceType = strtolower((string) ($sw['deviceType'] ?? 'switch'));
+            if ($deviceType !== 'switch') {
+                // Server / "other" devices don't have port/PoE/stack items —
+                // fetching them just wastes a Zabbix Item.get round-trip.
+                // For servers, pull a small inventory snippet instead.
+                if ($deviceType === 'server') {
+                    $merged = $this->mergeServerInventory($sw, $hostid);
+                    if ($merged['ok']) {
+                        $anySuccess = true;
+                        $switches[$i] = $merged['sw'];
+                    }
+                    else {
+                        // Non-fatal — keep the row, just don't claim success.
+                        $switches[$i] = $merged['sw'];
+                        if (!empty($merged['warning'])) {
+                            $warnings[] = $merged['warning'];
+                        }
+                    }
+                }
+                continue;
+            }
 
             $snapshot = $this->snapshotFor($client, $hostid);
             if ($snapshot === null) {
@@ -370,6 +395,59 @@ class EnrichmentService {
         catch (Throwable $e) {
             return null;
         }
+    }
+
+    /**
+     * Pull a tiny Zabbix host inventory snippet for a server-class device
+     * (os / os_full / serialno_a) and merge non-empty values onto the row.
+     * Cached per host id for TTL_SERVER_INV seconds. Failures degrade
+     * silently; never throws.
+     *
+     * @param array<string, mixed> $sw
+     * @return array{ok:bool, sw:array<string, mixed>, warning?:string}
+     */
+    private function mergeServerInventory(array $sw, string $hostid): array {
+        $cacheKey = 'closet_inv:server_inv:'.$hostid;
+        $inv = null;
+
+        $hit = Cache::get($cacheKey);
+        if ($hit !== null) {
+            $decoded = json_decode($hit, true);
+            if (is_array($decoded)) {
+                $inv = $decoded;
+            }
+        }
+
+        if ($inv === null) {
+            try {
+                $rows = API::Host()->get([
+                    'output'          => ['hostid'],
+                    'hostids'         => [$hostid],
+                    'selectInventory' => ['os', 'os_full', 'serialno_a']
+                ]) ?: [];
+                $row = is_array($rows[0] ?? null) ? $rows[0] : [];
+                $invRaw = is_array($row['inventory'] ?? null) ? $row['inventory'] : [];
+                $inv = [
+                    'os'         => (string) ($invRaw['os']         ?? ''),
+                    'os_full'    => (string) ($invRaw['os_full']    ?? ''),
+                    'serialno_a' => (string) ($invRaw['serialno_a'] ?? '')
+                ];
+                Cache::set($cacheKey, (string) json_encode($inv), self::TTL_SERVER_INV);
+            }
+            catch (Throwable $e) {
+                return ['ok' => false, 'sw' => $sw, 'warning' => 'server inv host:'.$hostid.' '.$e->getMessage()];
+            }
+        }
+
+        $osLabel = trim((string) ($inv['os_full'] ?? '')) ?: trim((string) ($inv['os'] ?? ''));
+        if ($osLabel !== '') {
+            $sw['osLabel'] = $osLabel;
+        }
+        $serial = trim((string) ($inv['serialno_a'] ?? ''));
+        if ($serial !== '' && (string) ($sw['serial'] ?? '') === '') {
+            $sw['serial'] = $serial;
+        }
+        return ['ok' => true, 'sw' => $sw];
     }
 
     /**

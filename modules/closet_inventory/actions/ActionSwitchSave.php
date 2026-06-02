@@ -46,7 +46,9 @@ class ActionSwitchSave extends CController {
             'serial'      => 'string',
             'stack'       => 'int32',
             'zabbixHostid'=> 'string',
-            'xiqDeviceId' => 'int32'
+            'xiqDeviceId' => 'int32',
+            'rconfigDeviceId' => 'int32',
+            'deviceType'  => 'string'
         ];
         $ok = $this->validateInput($fields);
         if (!$ok) {
@@ -61,7 +63,14 @@ class ActionSwitchSave extends CController {
         try {
             $closetUid = (int) $this->getInput('closetUid');
             $id = $this->hasInput('id') ? (int) $this->getInput('id') : null;
+            // device_type is part of the schema v2 contract; normalise to
+            // the known set, defaulting to 'switch' for back-compat.
+            $deviceType = strtolower((string) $this->getInput('deviceType', 'switch'));
+            if (!in_array($deviceType, ['switch', 'server', 'other'], true)) {
+                $deviceType = 'switch';
+            }
             $payload = [
+                'deviceType'  => $deviceType,
                 'name'        => (string) $this->getInput('name', ''),
                 'vendor'      => (string) $this->getInput('vendor', ''),
                 'model'       => (string) $this->getInput('model', ''),
@@ -85,9 +94,13 @@ class ActionSwitchSave extends CController {
                 $x = (int) $this->getInput('xiqDeviceId', 0);
                 $payload['xiqDeviceId'] = $x > 0 ? $x : null;
             }
+            if ($this->hasInput('rconfigDeviceId')) {
+                $r = (int) $this->getInput('rconfigDeviceId', 0);
+                $payload['rconfigDeviceId'] = $r > 0 ? $r : null;
+            }
 
             $store = new InventoryStore();
-            $newId = $store->saveSwitch($closetUid, $payload, ($id !== null && $id > 0) ? $id : null);
+            $newId = $store->saveDevice($closetUid, $payload, ($id !== null && $id > 0) ? $id : null);
             $this->setResponse(new CControllerResponseData([
                 'main_block' => json_encode(['ok' => true, 'id' => $newId, 'uid' => $closetUid])
             ]));

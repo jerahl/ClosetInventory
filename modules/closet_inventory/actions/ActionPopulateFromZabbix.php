@@ -186,7 +186,8 @@ class ActionPopulateFromZabbix extends CController {
                     $hosts = API::Host()->get([
                         'output'           => ['hostid', 'host', 'name', 'status'],
                         'groupids'         => [$groupId],
-                        'selectInterfaces' => ['ip', 'main', 'type']
+                        'selectInterfaces' => ['ip', 'main', 'type'],
+                        'selectTags'       => ['tag', 'value']
                     ]);
                     if (!is_array($hosts)) $hosts = [];
                 }
@@ -211,6 +212,26 @@ class ActionPopulateFromZabbix extends CController {
                         continue;
                     }
 
+                    // Classify by Zabbix host tags. target:exos → switch;
+                    // target:windows or target:linux → server; anything else
+                    // (no tag, or some unrelated tag) → other. If a host
+                    // carries BOTH exos AND windows/linux, switch wins as the
+                    // more specific operational role.
+                    $deviceType = 'other';
+                    $tags = (array) ($h['tags'] ?? []);
+                    $labels = [];
+                    foreach ($tags as $t) {
+                        if (is_array($t) && (string) ($t['tag'] ?? '') === 'target') {
+                            $labels[strtolower((string) ($t['value'] ?? ''))] = true;
+                        }
+                    }
+                    if (isset($labels['exos'])) {
+                        $deviceType = 'switch';
+                    }
+                    elseif (isset($labels['windows']) || isset($labels['linux'])) {
+                        $deviceType = 'server';
+                    }
+
                     $parsed = self::parseHostname($technical, $schoolId);
                     $switchName = $parsed['switchName'];
                     $closetType = $parsed['closetType'];
@@ -221,6 +242,20 @@ class ActionPopulateFromZabbix extends CController {
                     // hostnames like TMS-MDF-SW1 inside Site/TASPA stay named
                     // TMS-MDF but get filed under TASPA.
                     $closetCode = $parsed['closetCode'];
+
+                    // For non-switch hosts the hostname often carries no
+                    // MDF/IDF token (e.g. a Windows server or a door access
+                    // controller) — fall back to <school>-OTHER as the closet
+                    // code so it still files under a closet. The schema's
+                    // type column only stores MDF / IDF, so we keep type=IDF.
+                    if ($deviceType !== 'switch') {
+                        $hasMdfIdfToken = ($parsed['roomId'] !== '')
+                            || preg_match('/-(MDF|IDF)(?:-|$)/i', $technical) === 1;
+                        if (!$hasMdfIdfToken) {
+                            $closetCode = $schoolId.'-OTHER';
+                            $closetType = 'IDF';
+                        }
+                    }
 
                     if ($closetCode === '' || $switchName === '') {
                         $report['errors'][] = "could not parse hostname '$technical'";
@@ -241,14 +276,21 @@ class ActionPopulateFromZabbix extends CController {
 
                     $mgmtIp = self::pickMgmtIp($h['interfaces'] ?? []);
 
-                    $payload = ['zabbixHostid' => $hostid];
+                    $payload = [
+                        'zabbixHostid' => $hostid,
+                        'deviceType'   => $deviceType
+                    ];
                     if ($mgmtIp !== '') {
                         $payload['mgmtIp'] = $mgmtIp;
                     }
-                    $swUpsert = $store->upsertSwitch($closetUid, $switchName, $payload);
+                    $swUpsert = $store->upsertDevice($closetUid, $switchName, $payload);
                     if ($swUpsert['created']) {
-                        $report['switchesCreated']++;
+                        if ($deviceType === 'switch')      $report['switchesCreated']++;
+                        elseif ($deviceType === 'server')  $report['serversCreated']++;
+                        else                               $report['otherCreated']++;
                     }
+                    $report['byType'][$deviceType === 'switch' ? 'switches'
+                        : ($deviceType === 'server' ? 'servers' : 'other')]++;
                 }
             }
 

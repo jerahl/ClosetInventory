@@ -161,9 +161,11 @@ class InventoryStore {
                 'zabbixHostid'        => $sw['zabbix_hostid']     !== null ? (string) $sw['zabbix_hostid']     : null,
                 'xiqDeviceId'         => $sw['xiq_device_id']     !== null ? (int)    $sw['xiq_device_id']    : null,
                 'rconfigDeviceId'     => $sw['rconfig_device_id'] !== null ? (int)    $sw['rconfig_device_id'] : null,
-                // Live fields — always emitted, always null in Phase 1.
+                // Live fields — always emitted, always null until enrichment fills them.
                 'poeStatus'           => null,
-                'configBackupAgeDays' => null
+                'configBackupAgeDays' => null,
+                // Server-only label from Zabbix host inventory (os_full → os).
+                'osLabel'             => null
             ];
         }
 

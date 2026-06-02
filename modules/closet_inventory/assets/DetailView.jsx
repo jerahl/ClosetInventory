@@ -1,9 +1,17 @@
 /* Closet detail view. */
 
 function SwitchRow({ s, zabbixSource, onMove, onInspect }) {
-  const pct = Math.round((s.used / s.ports) * 100);
+  // Devices come in three flavours — switch, server, and "other" (door
+  // access, HVAC, etc.). The original SwitchRow rendered the switch shape
+  // (port bars, PoE tags, uplinks). For servers/other we hide those and
+  // surface the row's identity fields plus problem / OS / XIQ chips that
+  // still make sense.
+  const deviceType = (s.deviceType || "switch").toLowerCase();
+  const isSwitch   = deviceType === "switch";
+  const isServer   = deviceType === "server";
   const hasHost = s.zabbixHostid != null && s.zabbixHostid !== "";
   const hasXiq  = s.xiqDeviceId != null && +s.xiqDeviceId > 0;
+  const rowIcon = isSwitch ? Ic.Switch : (isServer ? Ic.Server : Ic.Building);
   // Live chip logic: drop the "pending" chip entirely once the closet is
   // pulling live Zabbix data for this switch. Show distinct chips for
   // "not mapped" (authored field missing) and "Zabbix unreachable" (mapped
@@ -36,12 +44,12 @@ function SwitchRow({ s, zabbixSource, onMove, onInspect }) {
     style: onInspect ? { cursor: "pointer" } : null,
     title: onInspect ? "Click for switch inventory details" : null
   },
-    React.createElement("div", { className: "swrow__icon" }, React.createElement(Ic.Switch, null)),
+    React.createElement("div", { className: "swrow__icon" }, React.createElement(rowIcon, null)),
     React.createElement("div", { className: "swrow__main" },
       React.createElement("div", { className: "swrow__name" }, s.name,
-        s.stack > 1 && React.createElement("span", { className: "uplink-tag", style: { background: "var(--violet-soft)", color: "var(--violet)", borderColor: "color-mix(in oklch, var(--violet) 25%, transparent)" } }, `Stack ×${s.stack}`),
-        s.poe && React.createElement("span", { className: "uplink-tag" }, "PoE+"),
-        s.poeStatus && React.createElement("span", {
+        isSwitch && s.stack > 1 && React.createElement("span", { className: "uplink-tag", style: { background: "var(--violet-soft)", color: "var(--violet)", borderColor: "color-mix(in oklch, var(--violet) 25%, transparent)" } }, `Stack ×${s.stack}`),
+        isSwitch && s.poe && React.createElement("span", { className: "uplink-tag" }, "PoE+"),
+        isSwitch && s.poeStatus && React.createElement("span", {
           className: "uplink-tag",
           title: "Live PoE status from Zabbix",
           style: { background: "var(--teal-soft)", color: "var(--teal)", borderColor: "color-mix(in oklch, var(--teal) 25%, transparent)" }
@@ -74,22 +82,24 @@ function SwitchRow({ s, zabbixSource, onMove, onInspect }) {
         })(),
         liveChip
       ),
-      React.createElement("div", { className: "swrow__model" }, `${s.vendor} ${s.model}`,
+      React.createElement("div", { className: "swrow__model" },
+        isServer ? (s.osLabel || `${s.vendor} ${s.model}`.trim() || "Server")
+                 : `${s.vendor} ${s.model}`,
         s.xiqSoftware && React.createElement("span", { className: "muted", style: { marginLeft: 8, fontSize: 11.5 } }, "· " + s.xiqSoftware)
       ),
       React.createElement("div", { className: "swrow__specs" },
-        React.createElement("div", { className: "spec", style: { minWidth: 130 } },
+        isSwitch && React.createElement("div", { className: "spec", style: { minWidth: 130 } },
           React.createElement("div", { className: "spec__k" }, "Port usage"),
           React.createElement("div", { style: { marginTop: 4 } }, React.createElement(PortBar, { used: s.used, total: s.ports, width: 90 }))),
         React.createElement("div", { className: "spec" },
           React.createElement("div", { className: "spec__k" }, "Mgmt IP"),
-          React.createElement("div", { className: "spec__v" }, s.mgmtIp)),
-        React.createElement("div", { className: "spec" },
+          React.createElement("div", { className: "spec__v" }, s.mgmtIp || "—")),
+        isSwitch && React.createElement("div", { className: "spec" },
           React.createElement("div", { className: "spec__k" }, "Uplinks"),
           React.createElement("div", { className: "spec__v" }, `${s.uplinks} × ${s.uplinkSpeed}`)),
         React.createElement("div", { className: "spec" },
           React.createElement("div", { className: "spec__k" }, "Serial"),
-          React.createElement("div", { className: "spec__v" }, s.serial)),
+          React.createElement("div", { className: "spec__v" }, s.serial || "—")),
         onMove && React.createElement("div", { className: "spec", style: { marginLeft: "auto" } },
           React.createElement("button", {
             className: "btn btn--sm",
@@ -381,7 +391,17 @@ function DetailView({ closet, onFlag, onResolve, onEdit, onAddSwitch, onAddMaint
         )
       ),
       React.createElement("div", { className: "detail-meta" },
-        React.createElement("div", null, React.createElement("div", { className: "meta__k" }, "Switches"), React.createElement("div", { className: "meta__v" }, c.switches.length)),
+        (function () {
+          const all = c.switches || [];
+          const sw  = all.filter((s) => (s.deviceType || "switch") === "switch").length;
+          const sv  = all.filter((s) => s.deviceType === "server").length;
+          const ot  = all.length - sw - sv;
+          const title = `Switches ${sw} · Servers ${sv} · Other ${ot}`;
+          return React.createElement("div", { title },
+            React.createElement("div", { className: "meta__k" }, "Switches"),
+            React.createElement("div", { className: "meta__v" }, sw)
+          );
+        })(),
         React.createElement("div", null, React.createElement("div", { className: "meta__k" }, "Ports in use"), React.createElement("div", { className: "meta__v mono" }, `${c.portsUsed} / ${c.portsTotal}`)),
         React.createElement("div", null, React.createElement("div", { className: "meta__k" }, "UPS / PDU"), React.createElement("div", { className: "meta__v mono" }, `${(c.power.upsList || []).length} / ${(c.power.pduList || []).length}`)),
         React.createElement("div", null, React.createElement("div", { className: "meta__k" }, "Last service"), React.createElement("div", { className: "meta__v" }, c.maintenance.length ? fmtDate(c.maintenance[0].date) : "—")),
@@ -401,22 +421,40 @@ function DetailView({ closet, onFlag, onResolve, onEdit, onAddSwitch, onAddMaint
     React.createElement("div", { className: "detail-grid" },
       // LEFT
       React.createElement("div", null,
-        React.createElement("div", { className: "panel" },
-          React.createElement("div", { className: "panel__head" },
-            React.createElement("div", { className: "panel-icon", style: { background: "var(--primary-soft)", color: "var(--primary-700)" } }, React.createElement(Ic.Switch, null)),
-            React.createElement("h3", null, "Switches"),
-            React.createElement("span", { className: "count" }, c.switches.length),
-            React.createElement("button", { className: "btn btn--sm panel-act", onClick: () => onAddSwitch(c) }, React.createElement(Ic.Plus, null), "Add")
-          ),
-          React.createElement("div", { className: "panel__body panel__body--flush" },
-            c.switches.map((sw, i) => React.createElement(SwitchRow, {
-              key: i, s: sw,
-              zabbixSource: (c._live && c._live.sources && c._live.sources.zabbix) || null,
-              onMove: onMove ? (s) => onMove(c, s) : null,
-              onInspect: onInspect ? (s) => onInspect(c, s) : null
-            }))
-          )
-        ),
+        // Three device panels in fixed order: switches, servers, other.
+        // Only render a panel when it has rows so quiet closets stay clean.
+        (function () {
+          const all = c.switches || [];
+          const groups = [
+            { key: "switch", title: "Switches",       icon: Ic.Switch,   list: all.filter((s) => (s.deviceType || "switch") === "switch") },
+            { key: "server", title: "Servers",        icon: Ic.Server,   list: all.filter((s) => (s.deviceType || "switch") === "server") },
+            { key: "other",  title: "Other devices",  icon: Ic.Building, list: all.filter((s) => {
+              const t = (s.deviceType || "switch"); return t !== "switch" && t !== "server";
+            }) }
+          ];
+          // Show at least the Switches panel (with Add button) when ALL three are empty,
+          // so operators can still add the first device.
+          const anyRows = groups.some((g) => g.list.length > 0);
+          const renderable = anyRows ? groups.filter((g) => g.list.length > 0) : [groups[0]];
+          return renderable.map((g) =>
+            React.createElement("div", { className: "panel", key: g.key },
+              React.createElement("div", { className: "panel__head" },
+                React.createElement("div", { className: "panel-icon", style: { background: "var(--primary-soft)", color: "var(--primary-700)" } }, React.createElement(g.icon, null)),
+                React.createElement("h3", null, g.title),
+                React.createElement("span", { className: "count" }, g.list.length),
+                g.key === "switch" && React.createElement("button", { className: "btn btn--sm panel-act", onClick: () => onAddSwitch(c) }, React.createElement(Ic.Plus, null), "Add")
+              ),
+              React.createElement("div", { className: "panel__body panel__body--flush" },
+                g.list.map((sw, i) => React.createElement(SwitchRow, {
+                  key: i, s: sw,
+                  zabbixSource: (c._live && c._live.sources && c._live.sources.zabbix) || null,
+                  onMove: onMove ? (s) => onMove(c, s) : null,
+                  onInspect: onInspect ? (s) => onInspect(c, s) : null
+                }))
+              )
+            )
+          );
+        })(),
         React.createElement(ProblemsBlock, { problems: (c._live && Array.isArray(c._live.problems)) ? c._live.problems : [] }),
         React.createElement("div", { className: "panel" },
           React.createElement("div", { className: "panel__head" },

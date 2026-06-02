@@ -183,7 +183,7 @@ function ListView({ closets, query, onOpen, onAddCloset, onFlag, onRefreshCounte
                   React.createElement(SortHead, { label: "School", col: "school", sort, setSort }),
                   React.createElement(SortHead, { label: "Type", col: "type", sort, setSort }),
                   React.createElement("th", null, "Location"),
-                  React.createElement(SortHead, { label: "Switches", col: "switches", sort, setSort, alignRight: true }),
+                  React.createElement(SortHead, { label: "Devices", col: "switches", sort, setSort, alignRight: true }),
                   React.createElement(SortHead, { label: "Port use", col: "ports", sort, setSort }),
                   React.createElement(SortHead, { label: "Updated", col: "updated", sort, setSort }),
                   React.createElement("th", null, "")
@@ -201,7 +201,17 @@ function ListView({ closets, query, onOpen, onAddCloset, onFlag, onRefreshCounte
                         React.createElement("span", { className: "muted", style: { fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 } }, schoolOf(c.schoolId).name))),
                     React.createElement("td", null, React.createElement(TypeBadge, { type: c.type })),
                     React.createElement("td", { className: "muted", style: { fontSize: 13 } }, `${c.building} · ${c.room}`),
-                    React.createElement("td", { style: { textAlign: "right" }, className: "tabnum mono" }, c.switches.length),
+                    (function () {
+                      const all = c.switches || [];
+                      const sw  = all.filter((s) => (s.deviceType || "switch") === "switch").length;
+                      const sv  = all.filter((s) => s.deviceType === "server").length;
+                      const ot  = all.length - sw - sv;
+                      return React.createElement("td", {
+                        style: { textAlign: "right" },
+                        className: "tabnum mono",
+                        title: `Switches ${sw} · Servers ${sv} · Other ${ot}`
+                      }, all.length);
+                    })(),
                     React.createElement("td", null, React.createElement(PortBar, { used: c.portsUsed, total: c.portsTotal })),
                     React.createElement("td", { className: "muted", style: { fontSize: 12.5, whiteSpace: "nowrap" } }, relDate(c.updated)),
                     React.createElement("td", { style: { textAlign: "right" } },
@@ -232,9 +242,18 @@ function ClosetCard({ c, onOpen }) {
       React.createElement(TypeBadge, { type: c.type })
     ),
     React.createElement("div", { className: "closet-card__stats" },
-      React.createElement("div", { className: "mini-stat" },
-        React.createElement("div", { className: "mini-stat__k" }, "Switches"),
-        React.createElement("div", { className: "mini-stat__v" }, c.switches.length)),
+      (function () {
+        const all = c.switches || [];
+        const sw  = all.filter((s) => (s.deviceType || "switch") === "switch").length;
+        const sv  = all.filter((s) => s.deviceType === "server").length;
+        const ot  = all.length - sw - sv;
+        return React.createElement("div", {
+          className: "mini-stat",
+          title: `Switches ${sw} · Servers ${sv} · Other ${ot}`
+        },
+          React.createElement("div", { className: "mini-stat__k" }, "Devices"),
+          React.createElement("div", { className: "mini-stat__v" }, all.length));
+      })(),
       React.createElement("div", { className: "mini-stat" },
         React.createElement("div", { className: "mini-stat__k" }, "Ports"),
         React.createElement("div", { className: "mini-stat__v" }, c.portsUsed, React.createElement("small", null, ` / ${c.portsTotal}`))),

@@ -263,6 +263,7 @@ function App() {
     try {
       const payload = {
         closetUid: c.uid,
+        deviceType: (sw.deviceType || "switch"),
         name: sw.name, vendor: sw.vendor, model: sw.model,
         ports: +sw.ports || 0, used: +sw.used || 0,
         poe: sw.poe ? 1 : 0, uplinks: +sw.uplinks || 0,
