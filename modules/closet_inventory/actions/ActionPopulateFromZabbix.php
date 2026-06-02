@@ -201,11 +201,20 @@ class ActionPopulateFromZabbix extends CController {
                     }
 
                     $parsed = self::parseHostname($technical, $schoolId);
-                    $closetCode = $parsed['closetCode'];
                     $switchName = $parsed['switchName'];
                     $closetType = $parsed['closetType'];
 
-                    if ($closetCode === '' || $switchName === '') {
+                    // School is ALWAYS the one from the Zabbix host group. The
+                    // hostname's prefix is just a label — hosts named
+                    // 'TMS-MDF-SW1' living in Site/TASPA belong to TASPA.
+                    // Rebuild the closet code from the group's schoolId so the
+                    // UI doesn't display the misleading hostname prefix.
+                    $closetCode = $schoolId.'-'.$closetType;
+                    if (!empty($parsed['roomId'])) {
+                        $closetCode .= '-'.$parsed['roomId'];
+                    }
+
+                    if ($switchName === '') {
                         $report['errors'][] = "could not parse hostname '$technical'";
                         continue;
                     }
@@ -254,51 +263,43 @@ class ActionPopulateFromZabbix extends CController {
      * Parse a switch hostname into a (closet_code, switch_name, closet_type)
      * tuple. See class docblock for the grammar.
      *
-     * @return array{closetCode:string, switchName:string, closetType:string}
+     * @return array{switchName:string, closetType:string, roomId:string}
      */
     public static function parseHostname(string $hostname, string $schoolId): array {
         $hostname = trim($hostname);
         if ($hostname === '') {
-            return ['closetCode' => '', 'switchName' => '', 'closetType' => 'IDF'];
+            return ['switchName' => '', 'closetType' => 'IDF', 'roomId' => ''];
         }
 
         $parts = explode('-', $hostname);
         $n = count($parts);
 
+        // Find the MDF/IDF token's position so we can extract the room id
+        // segments that follow it. Default to IDF when absent.
         $closetType = 'IDF';
-        foreach ($parts as $p) {
+        $typeIdx    = -1;
+        foreach ($parts as $i => $p) {
             $u = strtoupper($p);
-            if ($u === 'MDF') { $closetType = 'MDF'; break; }
-            if ($u === 'IDF') { $closetType = 'IDF'; break; }
+            if ($u === 'MDF') { $closetType = 'MDF'; $typeIdx = $i; break; }
+            if ($u === 'IDF') { $closetType = 'IDF'; $typeIdx = $i; break; }
         }
 
         // Identify a trailing switch suffix: SW\d+ or a recognised role token.
         $lastIdx = $n - 1;
         $last    = strtoupper((string) $parts[$lastIdx]);
-        $hasSuffix = false;
+        $hasSuffix = (preg_match('/^SW\d+$/i', $last) === 1)
+                  || in_array($last, self::SWITCH_SUFFIXES, true);
+        $roomEnd = $hasSuffix ? $lastIdx - 1 : $lastIdx;
 
-        if (preg_match('/^SW\d+$/i', $last) === 1) {
-            $hasSuffix = true;
-        }
-        else if (in_array($last, self::SWITCH_SUFFIXES, true)) {
-            $hasSuffix = true;
-        }
-
-        if ($hasSuffix && $n >= 2) {
-            $closetCode = implode('-', array_slice($parts, 0, $lastIdx));
-            $switchName = $hostname;
-            return [
-                'closetCode' => $closetCode,
-                'switchName' => $switchName,
-                'closetType' => $closetType
-            ];
+        $roomId = '';
+        if ($typeIdx >= 0 && $roomEnd > $typeIdx) {
+            $roomId = implode('-', array_slice($parts, $typeIdx + 1, $roomEnd - $typeIdx));
         }
 
-        // No suffix — closet code IS the whole hostname.
         return [
-            'closetCode' => $hostname,
             'switchName' => $hostname,
-            'closetType' => $closetType
+            'closetType' => $closetType,
+            'roomId'     => $roomId
         ];
     }
 
