@@ -577,7 +577,15 @@ input, select, textarea { font-family: inherit; }
   .main { margin-left: 0; }
   .topbar__menu { display: grid; }
   .topbar { padding: 0 12px; gap: 10px; }
-  .content { padding: 18px 14px; }
+  .content { padding: 14px 10px; }
+  /* Tighten inner padding inside cards / panels / device rows so a 360px
+     phone isn't dominated by gutters. Cumulative left edge: content(10) +
+     panel-border(1) + panel-body(12) + swrow(12) = 35px (was 51px). */
+  .panel__head { padding: 12px 12px; }
+  .panel__body { padding: 6px 12px 12px; }
+  .swrow { padding: 12px 12px; gap: 10px; }
+  .swrow__icon { width: 32px; height: 32px; }
+  .card { padding: 14px !important; }
   /* Search collapses to a compact pill instead of stretching across the top
      bar. Smaller height + 16px font keeps iOS Safari from zooming the
      viewport on focus. */
