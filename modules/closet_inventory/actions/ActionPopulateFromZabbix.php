@@ -184,10 +184,16 @@ class ActionPopulateFromZabbix extends CController {
                 $hosts = [];
                 try {
                     $hosts = API::Host()->get([
-                        'output'           => ['hostid', 'host', 'name', 'status'],
-                        'groupids'         => [$groupId],
-                        'selectInterfaces' => ['ip', 'main', 'type'],
-                        'selectTags'       => ['tag', 'value']
+                        'output'              => ['hostid', 'host', 'name', 'status'],
+                        'groupids'            => [$groupId],
+                        'selectInterfaces'    => ['ip', 'main', 'type'],
+                        // Host's own tags AND tags inherited from linked
+                        // templates. The `target:exos` tag is typically on
+                        // the Extreme EXOS template, not on each switch host
+                        // directly — without selectInheritedTags those hosts
+                        // appear untagged and get misclassified as 'other'.
+                        'selectTags'          => ['tag', 'value'],
+                        'selectInheritedTags' => ['tag', 'value']
                     ]);
                     if (!is_array($hosts)) $hosts = [];
                 }
@@ -218,11 +224,14 @@ class ActionPopulateFromZabbix extends CController {
                     // carries BOTH exos AND windows/linux, switch wins as the
                     // more specific operational role.
                     $deviceType = 'other';
-                    $tags = (array) ($h['tags'] ?? []);
                     $labels = [];
-                    foreach ($tags as $t) {
-                        if (is_array($t) && (string) ($t['tag'] ?? '') === 'target') {
-                            $labels[strtolower((string) ($t['value'] ?? ''))] = true;
+                    // Merge host-level + template-inherited tags. Either array
+                    // can be absent depending on Zabbix version / host config.
+                    foreach ([(array) ($h['tags'] ?? []), (array) ($h['inheritedTags'] ?? [])] as $bag) {
+                        foreach ($bag as $t) {
+                            if (is_array($t) && (string) ($t['tag'] ?? '') === 'target') {
+                                $labels[strtolower((string) ($t['value'] ?? ''))] = true;
+                            }
                         }
                     }
                     if (isset($labels['exos'])) {
