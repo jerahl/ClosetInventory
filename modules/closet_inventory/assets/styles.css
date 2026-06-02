@@ -616,11 +616,25 @@ input, select, textarea { font-family: inherit; }
 .mobile-cards { display: none; }
 @media (max-width: 860px) { .mobile-cards { display: grid; } }
 
+/* Service queue tables sit inside cards with their own headers and live
+   in horizontally-scrollable wrappers, so the .tbl sticky-top behaviour
+   (intended for full-page list views) just misaligns them. Pin static. */
+.queue-tbl th {
+  position: static; top: auto;
+  background: var(--surface-2);
+}
+.queue-tbl th, .queue-tbl td { vertical-align: middle; }
+/* Right-align the trailing actions cell consistently across browsers — some
+   themes inject text-align: left on tbody td which silently overrides the
+   inline style at certain breakpoints. */
+.queue-tbl th:last-child, .queue-tbl td:last-child { text-align: right; }
+
 /* Service queue: drop intermediate columns on narrow screens, keep code,
-   school, and actions. */
+   school, and actions. Hide both the TH and matching TDs so the column
+   collapses cleanly. */
 @media (max-width: 860px) {
-  .queue-tbl .q-col-mid { display: none; }
+  .queue-tbl th.q-col-mid, .queue-tbl td.q-col-mid { display: none; }
 }
 @media (max-width: 560px) {
-  .queue-tbl .q-col-school { display: none; }
+  .queue-tbl th.q-col-school, .queue-tbl td.q-col-school { display: none; }
 }
