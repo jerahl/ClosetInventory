@@ -620,8 +620,17 @@ input, select, textarea { font-family: inherit; }
   .stat-strip { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
   .field-row, .field-row--3 { grid-template-columns: 1fr; }
   .detail-head__actions { width: 100%; }
-  .page-head__actions { width: 100%; }
-  .page-head__actions .btn { flex: 1; justify-content: center; }
+  .page-head__actions { width: 100%; flex-wrap: wrap; gap: 8px; }
+  /* Each button claims roughly half the row so we get two per line. min-width:0
+     lets them shrink and ellipse instead of bleeding into neighbours. */
+  .page-head__actions .btn {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+    justify-content: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   /* Even tighter search: shrink-only, but anchor min so the icon + input
      don't collapse onto each other. */
   .searchbox { max-width: 170px; flex: 0 1 170px; }
