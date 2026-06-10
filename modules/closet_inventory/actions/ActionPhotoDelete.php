@@ -16,8 +16,7 @@ use CWebUser;
 class ActionPhotoDelete extends CController {
 
     private const PHOTO_ROOTS = [
-        '/var/lib/closet-inventory/photos',
-        '/tmp/closet_inventory_photos'
+        '/var/lib/closet-inventory/photos'
     ];
 
     protected function init(): void {

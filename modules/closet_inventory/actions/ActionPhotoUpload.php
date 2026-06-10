@@ -16,12 +16,8 @@ use Modules\ClosetInventory\Lib\InventoryStore;
  */
 class ActionPhotoUpload extends CController {
 
-    // Tried in order. First writable path wins. The /tmp fallback is for
-    // demo / test environments; production should use the /var/lib path with
-    // ownership granted to the php-fpm user.
     private const PHOTO_ROOTS = [
-        '/var/lib/closet-inventory/photos',
-        '/tmp/closet_inventory_photos'
+        '/var/lib/closet-inventory/photos'
     ];
     private const MAX_BYTES      = 10 * 1024 * 1024;
     private const ALLOWED_EXT    = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
