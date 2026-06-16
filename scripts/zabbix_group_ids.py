@@ -33,37 +33,58 @@ import urllib.error
 import urllib.request
 
 
-def call(url: str, token: str, method: str, params: dict,
-         insecure: bool = False, timeout: float = 30.0) -> object:
-    """Make a single Zabbix JSON-RPC call and return the ``result`` payload."""
+def _endpoint(url: str) -> str:
     endpoint = url.rstrip("/")
     if not endpoint.endswith("api_jsonrpc.php"):
         endpoint += "/api_jsonrpc.php"
+    return endpoint
 
-    payload = json.dumps({
-        "jsonrpc": "2.0",
-        "method": method,
-        "params": params,
-        "id": 1,
-    }).encode("utf-8")
 
-    request = urllib.request.Request(endpoint, data=payload, method="POST")
+def _ssl_context(insecure: bool):
+    if not insecure:
+        return None
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context
+
+
+def _raw_call(endpoint: str, token: str, method: str, params: dict,
+              auth_in_body: bool, context, timeout: float) -> dict:
+    """Issue one JSON-RPC request and return the decoded response body."""
+    envelope = {"jsonrpc": "2.0", "method": method, "params": params, "id": 1}
+    if auth_in_body:
+        # Zabbix < 6.4 reads the token from the "auth" field in the body.
+        envelope["auth"] = token
+
+    request = urllib.request.Request(
+        endpoint, data=json.dumps(envelope).encode("utf-8"), method="POST")
     request.add_header("Content-Type", "application/json-rpc")
-    # Zabbix 6.4+ prefers the bearer header; older versions accept an "auth"
-    # field in the body, but the header works across both when using a token.
-    request.add_header("Authorization", f"Bearer {token}")
-
-    context = None
-    if insecure:
-        context = ssl.create_default_context()
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
+    if not auth_in_body:
+        # Zabbix 6.4+ accepts (and 7.0+ requires) the bearer header.
+        request.add_header("Authorization", f"Bearer {token}")
 
     try:
         with urllib.request.urlopen(request, timeout=timeout, context=context) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
+            return json.loads(resp.read().decode("utf-8"))
     except urllib.error.URLError as exc:
         raise SystemExit(f"error: could not reach Zabbix at {endpoint}: {exc}")
+
+
+def call(url: str, token: str, method: str, params: dict,
+         insecure: bool = False, timeout: float = 30.0) -> object:
+    """Make a Zabbix JSON-RPC call and return the ``result`` payload.
+
+    Tries the bearer header first (Zabbix 6.4+). If the server rejects it as
+    an auth/session failure — which is how pre-6.4 servers respond when the
+    token isn't in the request body — it retries with the token in the body.
+    """
+    endpoint = _endpoint(url)
+    context = _ssl_context(insecure)
+
+    body = _raw_call(endpoint, token, method, params, False, context, timeout)
+    if _is_auth_error(body):
+        body = _raw_call(endpoint, token, method, params, True, context, timeout)
 
     if "error" in body:
         err = body["error"]
@@ -72,6 +93,16 @@ def call(url: str, token: str, method: str, params: dict,
             f"{err.get('message', '')} {err.get('data', '')}".strip()
         )
     return body.get("result")
+
+
+def _is_auth_error(body: dict) -> bool:
+    """True when the response is an authentication/session rejection."""
+    err = body.get("error")
+    if not err:
+        return False
+    text = f"{err.get('message', '')} {err.get('data', '')}".lower()
+    return ("re-login" in text or "not authorized" in text
+            or "session terminated" in text or "authorization" in text)
 
 
 def fetch_groups(url: str, token: str, prefix: str | None,
