@@ -22,7 +22,7 @@ window.SeedData = window.SeedData || { schools: [], closets: [] };
 </script>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
 <script type="text/babel" data-presets="env,react" src="modules/closet_inventory/assets/icons.jsx"></script>
 <script type="text/babel" data-presets="env,react" src="modules/closet_inventory/assets/components.jsx"></script>
 <script type="text/babel" data-presets="env,react" src="modules/closet_inventory/assets/tweaks-panel.jsx"></script>
